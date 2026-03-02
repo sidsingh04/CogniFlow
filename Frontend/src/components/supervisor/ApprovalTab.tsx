@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import CreateTicketModal from './CreateTicketModal';
-import SupervisorTicketDetailsModal from './SupervisorTicketDetailsModal';
 import socket from '../../services/socket';
+import SupervisorTicketDetailsModal from './SupervisorTicketDetailsModal';
 
 interface Ticket {
     issueId: string;
@@ -12,10 +11,12 @@ interface Ticket {
     agentId: string;
     issueDate: string;
     approvalDate?: string;
-    resolvedDate?: string;
     callDuration?: number;
     remarks?: string;
 }
+
+type SortField = 'issueDate' | 'approvalDate';
+type SortOrder = 'asc' | 'desc';
 
 // Custom Hook for Debouncing Values
 function useDebounce<T>(value: T, delay: number): T {
@@ -31,10 +32,9 @@ function useDebounce<T>(value: T, delay: number): T {
     return debouncedValue;
 }
 
-export default function TicketsTab() {
-    const [tickets, setTickets] = useState<Ticket[]>([]);
+export default function ApprovalTab() {
+    const [approvalTickets, setApprovalTickets] = useState<Ticket[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
 
     // Attachment Viewer State
@@ -50,32 +50,20 @@ export default function TicketsTab() {
     const debouncedAgentId = useDebounce(searchAgentId, 400);
     const debouncedCode = useDebounce(searchCode, 400);
 
-    const [filterStatus, setFilterStatus] = useState('All');
     const [filterIssueDate, setFilterIssueDate] = useState('');
-    const [filterResolvedDate, setFilterResolvedDate] = useState('');
-
-    // Pagination state
-    const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 10;
-
     const todayStr = new Date().toISOString().split('T')[0];
 
-    // Reset pagination when filters change
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [debouncedAgentId, debouncedCode, filterStatus, filterIssueDate, filterResolvedDate]);
+    const [sortOption, setSortOption] = useState('approvalDate-desc');
 
     const fetchData = async () => {
         setIsLoading(true);
         try {
-            const res = await axios.get('http://localhost:3000/api/ticket/get-all');
+            const res = await axios.get('http://localhost:3000/api/ticket/get-by-status?status=approval');
             if (res.data.success) {
-                // sort by issueDate descending by default
-                const sorted = res.data.tickets.sort((a: any, b: any) => new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime());
-                setTickets(sorted);
+                setApprovalTickets(res.data.tickets);
             }
         } catch (error) {
-            console.error("Error fetching tickets:", error);
+            console.error("Error fetching approval tickets:", error);
         } finally {
             setIsLoading(false);
         }
@@ -121,20 +109,18 @@ export default function TicketsTab() {
         socket.on("ticketApprovalSent", refreshTickets);
         socket.on("ticketResolved", refreshTickets);
         socket.on("ticketRejected", refreshTickets);
-        socket.on("ticketUpdated", refreshTickets);
 
         return () => {
             socket.off("ticketAssigned", refreshTickets);
             socket.off("ticketApprovalSent", refreshTickets);
             socket.off("ticketResolved", refreshTickets);
             socket.off("ticketRejected", refreshTickets);
-            socket.off("ticketUpdated", refreshTickets);
         };
     }, []);
 
-    // Filter Logic
+    // Filter and Sort Logic
     const processedTickets = useMemo(() => {
-        let result = [...tickets];
+        let result = [...approvalTickets];
 
         // 1. Text Filters (Debounced)
         if (debouncedAgentId.trim()) {
@@ -149,85 +135,47 @@ export default function TicketsTab() {
             );
         }
 
-        // 2. Status Filter
-        if (filterStatus !== 'All') {
-            result = result.filter(ticket => ticket.status.toLowerCase() === filterStatus.toLowerCase());
-        }
-
-        // 3. Date Filters
+        // 2. Date Filters
         if (filterIssueDate) {
             result = result.filter(ticket =>
                 new Date(ticket.issueDate).toLocaleDateString() === new Date(filterIssueDate).toLocaleDateString()
             );
         }
 
-        if (filterResolvedDate) {
-            result = result.filter(ticket =>
-                ticket.resolvedDate && new Date(ticket.resolvedDate).toLocaleDateString() === new Date(filterResolvedDate).toLocaleDateString()
-            );
-        }
+        // 3. Sort
+        const [field, order] = sortOption.split('-') as [SortField, SortOrder];
+        result.sort((a, b) => {
+            const dateA = new Date(field === 'issueDate' ? a.issueDate : (a.approvalDate || a.issueDate)).getTime();
+            const dateB = new Date(field === 'issueDate' ? b.issueDate : (b.approvalDate || b.issueDate)).getTime();
+
+            return order === 'asc' ? dateA - dateB : dateB - dateA;
+        });
 
         return result;
-    }, [tickets, debouncedAgentId, debouncedCode, filterStatus, filterIssueDate, filterResolvedDate]);
-
-    // Pagination Logic
-    const totalPages = Math.ceil(processedTickets.length / itemsPerPage);
-    const paginatedTickets = processedTickets.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage
-    );
-
-    const StatusBadge = ({ status }: { status: string }) => {
-        const config: Record<string, { bg: string, text: string, dot: string }> = {
-            pending: { bg: 'bg-[var(--status-pending-bg)]', text: 'text-[var(--status-pending-color)]', dot: 'bg-orange-400' },
-            approval: { bg: 'bg-blue-50', text: 'text-blue-600', dot: 'bg-blue-400' },
-            resolved: { bg: 'bg-[var(--status-resolved-bg)]', text: 'text-[var(--status-resolved-color)]', dot: 'bg-emerald-400' }
-        };
-
-        const style = config[status.toLowerCase()] || { bg: 'bg-gray-100', text: 'text-gray-800', dot: 'bg-gray-400' };
-
-        return (
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 ${style.bg} ${style.text} text-xs font-semibold rounded uppercase tracking-wider border border-current/20`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`}></span>
-                {status}
-            </span>
-        );
-    };
+    }, [approvalTickets, debouncedAgentId, debouncedCode, filterIssueDate, sortOption]);
 
     if (isLoading) {
-        return <div className="p-8 text-center text-[var(--text-muted)] italic flex-1 flex items-center justify-center">Loading tickets...</div>;
+        return <div className="p-8 text-center text-[var(--text-muted)] italic flex-1 flex items-center justify-center">Loading approval tickets...</div>;
     }
 
     return (
         <div className="px-4 py-2 h-full flex flex-col gap-3">
 
-            {/* Top Bar with Create Button */}
-            <div className="flex justify-start items-center gap-4">
-                <button
-                    onClick={() => setIsCreateModalOpen(true)}
-                    className="bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-hover)] transition-colors px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border-none cursor-pointer shadow-sm"
-                >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v14M5 12h14" />
-                    </svg>
-                    Create Ticket
-                </button>
-                <h2 className="text-lg font-bold text-[var(--text-primary)] m-0">All System Tickets</h2>
-            </div>
-
             {/* Control Panel */}
             <div className="bg-[var(--bg-card)] rounded-xl shadow-[var(--shadow-sm)] border border-[var(--border-secondary)] overflow-hidden shrink-0">
                 <div className="px-4 py-2 bg-[var(--bg-tertiary)] border-b border-[var(--border-secondary)] flex justify-between items-center">
                     <h2 className="text-sm font-bold text-[var(--text-primary)] m-0 flex items-center gap-2">
-                        <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
-                        Filter Controls
+                        <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+                        Filter & Sort
                     </h2>
                     <span className="text-xs font-semibold text-[var(--text-secondary)]">
                         {processedTickets.length} result{processedTickets.length !== 1 ? 's' : ''}
                     </span>
                 </div>
 
+                {/* Using a flex layout with flex-1 ensures all inputs share the single row equally on desktop */}
                 <div className="px-4 py-3 flex flex-wrap md:flex-nowrap gap-3 items-end">
+
                     {/* Text Search Group */}
                     <div className="flex flex-col gap-1.5 flex-[1.5] min-w-[150px]">
                         <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wide">Search Agent ID</label>
@@ -271,24 +219,24 @@ export default function TicketsTab() {
                         </div>
                     </div>
 
-                    {/* Status Dropdown */}
-                    <div className="flex flex-col gap-1.5 flex-[1.5] min-w-[120px]">
-                        <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wide">Status</label>
+                    {/* Sort Dropdown */}
+                    <div className="flex flex-col gap-1.5 flex-[1.5] min-w-[180px]">
+                        <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wide">Sort Orders</label>
                         <select
-                            value={filterStatus}
-                            onChange={(e) => setFilterStatus(e.target.value)}
+                            value={sortOption}
+                            onChange={(e) => setSortOption(e.target.value)}
                             className="w-full px-3 py-2 border border-[var(--border-secondary)] rounded-md bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)] transition-all text-xs appearance-none cursor-pointer"
                             style={{ backgroundImage: `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>')`, backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.2em 1.2em' }}
                         >
-                            <option value="All">All Statuses</option>
-                            <option value="pending">Pending</option>
-                            <option value="approval">Approval</option>
-                            <option value="resolved">Resolved</option>
+                            <option value="approvalDate-desc">Newest Sent</option>
+                            <option value="approvalDate-asc">Oldest Sent</option>
+                            <option value="issueDate-desc">Newest Created</option>
+                            <option value="issueDate-asc">Oldest Created</option>
                         </select>
                     </div>
 
                     {/* Date Pickers */}
-                    <div className="flex flex-col gap-1.5 flex-[1] min-w-[130px] max-w-[180px]">
+                    <div className="flex flex-col gap-1.5 flex-[1] min-w-[140px] max-w-[200px]">
                         <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wide">Issue Date</label>
                         <div className="relative">
                             <input
@@ -305,45 +253,36 @@ export default function TicketsTab() {
                             )}
                         </div>
                     </div>
-
-                    <div className="flex flex-col gap-1.5 flex-[1] min-w-[130px] max-w-[180px]">
-                        <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wide">Resolved Date</label>
-                        <div className="relative">
-                            <input
-                                type="date"
-                                max={todayStr}
-                                value={filterResolvedDate}
-                                onChange={(e) => setFilterResolvedDate(e.target.value)}
-                                className={`w-full px-3 py-2 border border-[var(--border-secondary)] rounded-md bg-[var(--bg-primary)] focus:outline-none focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)] transition-all text-xs cursor-pointer ${!filterResolvedDate ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}
-                            />
-                            {filterResolvedDate && (
-                                <button onClick={() => setFilterResolvedDate('')} className="absolute inset-y-0 right-7 pr-1 flex items-center text-[var(--text-muted)] hover:text-red-500 transition-colors z-10 bg-[var(--bg-primary)]">
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                                </button>
-                            )}
-                        </div>
-                    </div>
                 </div>
             </div>
 
             <div className="bg-[var(--bg-card)] rounded-xl shadow-[var(--shadow-sm)] border border-[var(--border-secondary)] flex flex-col flex-1 overflow-hidden border-t-4 border-t-[var(--accent-primary)]">
-                {/* Table Area */}
+                {/* Header */}
+                <div className="px-4 py-2 border-b border-[var(--border-secondary)] flex justify-between items-center bg-[var(--bg-tertiary)]">
+                    <div className="flex items-center gap-3">
+                        <div className="p-1.5 bg-[var(--accent-secondary)] text-white rounded-md shadow-sm">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        </div>
+                        <h2 className="text-base font-bold text-[var(--text-primary)] m-0">Pending Approvals</h2>
+                    </div>
+                </div>
+
+                {/* Table Area: reduced cell padding and header py to fit more items organically */}
                 <div className="flex-1 overflow-auto">
                     <table className="w-full text-left border-collapse min-w-[800px]">
                         <thead className="sticky top-0 bg-[var(--bg-secondary)] shadow-sm z-10">
                             <tr>
-                                <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)] whitespace-nowrap">Ticket ID</th>
-                                <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)] whitespace-nowrap">Agent ID</th>
+                                <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)]">Ticket ID</th>
+                                <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)]">Agent ID</th>
                                 <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)]">Issue Topic</th>
-                                <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)] whitespace-nowrap">Status</th>
-                                <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)] whitespace-nowrap">Issue Date</th>
-                                <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)] whitespace-nowrap">Resolved Date</th>
+                                <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)]">Issue Date</th>
+                                <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)]">Sent For Approval</th>
                                 <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)] text-right">Attachment</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {paginatedTickets.length > 0 ? (
-                                paginatedTickets.map((t) => (
+                            {processedTickets.length > 0 ? (
+                                processedTickets.map((t) => (
                                     <tr
                                         key={t.issueId}
                                         onClick={() => setSelectedTicket(t)}
@@ -355,17 +294,14 @@ export default function TicketsTab() {
                                         <td className="py-2.5 px-5 text-sm font-medium text-[var(--text-primary)]">
                                             {t.agentId}
                                         </td>
-                                        <td className="py-2.5 px-5 text-sm text-[var(--text-primary)] truncate max-w-[200px]" title={t.code}>
+                                        <td className="py-2.5 px-5 text-sm text-[var(--text-primary)] truncate max-w-[250px]">
                                             {t.code}
-                                        </td>
-                                        <td className="py-2.5 px-5 text-sm text-[var(--text-primary)]">
-                                            <StatusBadge status={t.status} />
                                         </td>
                                         <td className="py-2.5 px-5 text-xs text-[var(--text-secondary)] whitespace-nowrap">
                                             {new Date(t.issueDate).toLocaleString()}
                                         </td>
                                         <td className="py-2.5 px-5 text-xs text-[var(--text-secondary)] font-medium whitespace-nowrap">
-                                            {t.resolvedDate ? new Date(t.resolvedDate).toLocaleString() : 'N/A'}
+                                            {t.approvalDate ? new Date(t.approvalDate).toLocaleString() : 'N/A'}
                                         </td>
                                         <td className="py-2.5 px-5 text-right">
                                             <button
@@ -380,11 +316,11 @@ export default function TicketsTab() {
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={7} className="py-10 text-center text-[var(--text-muted)] italic">
+                                    <td colSpan={5} className="py-10 text-center text-[var(--text-muted)] italic">
                                         <div className="flex flex-col items-center justify-center gap-3">
                                             <svg className="w-10 h-10 text-[var(--text-muted)]/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                             <span className="text-sm">
-                                                {tickets.length > 0 ? 'No tickets match your search filters.' : 'No tickets have been created yet.'}
+                                                {approvalTickets.length > 0 ? 'No tickets match your search filters.' : 'No items pending approval at this time.'}
                                             </span>
                                         </div>
                                     </td>
@@ -393,41 +329,7 @@ export default function TicketsTab() {
                         </tbody>
                     </table>
                 </div>
-
-                {/* Pagination Controls */}
-                {totalPages > 1 && (
-                    <div className="px-5 py-3 border-t border-[var(--border-secondary)] bg-[var(--bg-tertiary)] flex justify-between items-center shrink-0">
-                        <span className="text-xs text-[var(--text-secondary)]">
-                            Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, processedTickets.length)} of {processedTickets.length} entries
-                        </span>
-                        <div className="flex items-center gap-2">
-                            <button
-                                disabled={currentPage === 1}
-                                onClick={(e) => { e.stopPropagation(); setCurrentPage(p => p - 1); }}
-                                className="px-3 py-1.5 rounded bg-[var(--bg-primary)] border border-[var(--border-secondary)] text-[var(--text-primary)] text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--bg-secondary)] transition-colors"
-                            >
-                                Previous
-                            </button>
-                            <span className="text-xs font-semibold text-[var(--text-primary)] px-2">
-                                Page {currentPage} of {totalPages}
-                            </span>
-                            <button
-                                disabled={currentPage === totalPages}
-                                onClick={(e) => { e.stopPropagation(); setCurrentPage(p => p + 1); }}
-                                className="px-3 py-1.5 rounded bg-[var(--bg-primary)] border border-[var(--border-secondary)] text-[var(--text-primary)] text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--bg-secondary)] transition-colors"
-                            >
-                                Next
-                            </button>
-                        </div>
-                    </div>
-                )}
             </div>
-
-            <CreateTicketModal
-                isOpen={isCreateModalOpen}
-                onClose={() => setIsCreateModalOpen(false)}
-                onSuccess={() => fetchData()}
-            />
 
             <SupervisorTicketDetailsModal
                 isOpen={!!selectedTicket}
@@ -436,7 +338,6 @@ export default function TicketsTab() {
                 onTicketUpdate={() => {
                     fetchData();
                 }}
-                readOnly={true}
             />
 
             {/* Inline Attachment Modal */}

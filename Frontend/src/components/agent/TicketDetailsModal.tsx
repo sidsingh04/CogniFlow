@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { v4 as uuidv4 } from "uuid";
 
@@ -14,6 +14,45 @@ export default function TicketDetailsModal({ isOpen, onClose, ticket, agent, onT
     const [remarks, setRemarks] = useState('');
     const [callDuration, setCallDuration] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+    const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null);
+
+    // Cleanup object URL
+    useEffect(() => {
+        return () => {
+            if (attachmentPreview) {
+                URL.revokeObjectURL(attachmentPreview);
+            }
+        };
+    }, [attachmentPreview]);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/') && !file.type.startsWith('audio/')) {
+            alert('Please select a valid image or audio file.');
+            e.target.value = ''; // Reset
+            return;
+        }
+
+        setAttachmentFile(file);
+
+        // Create local preview
+        const url = URL.createObjectURL(file);
+        setAttachmentPreview(url);
+    };
+
+    const handleClearFile = () => {
+        setAttachmentFile(null);
+        if (attachmentPreview) {
+            URL.revokeObjectURL(attachmentPreview);
+            setAttachmentPreview(null);
+        }
+        // Reset the file input element
+        const fileInput = document.getElementById('approvalAttachment') as HTMLInputElement;
+        if (fileInput) fileInput.value = '';
+    };
 
     if (!isOpen || !ticket) return null;
 
@@ -32,6 +71,23 @@ export default function TicketDetailsModal({ isOpen, onClose, ticket, agent, onT
         setIsSubmitting(true);
 
         try {
+            // Conditionally upload attachment to S3 first
+            if (attachmentFile) {
+                const formData = new FormData();
+                formData.append('file', attachmentFile);
+                formData.append('ticketId', ticket._id);
+
+                await axios.post(
+                    'http://localhost:3000/api/attachments/upload',
+                    formData,
+                    {
+                        headers: {
+                            'Content-Type': 'multipart/form-data',
+                        }
+                    }
+                );
+            }
+
             const updatedTicket = {
                 ...ticket,
                 status: 'approval',
@@ -53,6 +109,7 @@ export default function TicketDetailsModal({ isOpen, onClose, ticket, agent, onT
             // Revert UI fields back
             setRemarks('');
             setCallDuration('');
+            handleClearFile();
             if (onTicketUpdate) onTicketUpdate();
             onClose();
 
@@ -173,8 +230,27 @@ export default function TicketDetailsModal({ isOpen, onClose, ticket, agent, onT
                                     type="file"
                                     id="approvalAttachment"
                                     accept="image/*,audio/*"
+                                    onChange={handleFileChange}
+                                    disabled={agent?.status === 'Break' || isSubmitting}
                                     className="p-3 border border-[var(--border-secondary)] rounded-md bg-[var(--bg-card)] text-[var(--text-primary)] font-sans text-[0.95rem] outline-none transition-colors w-full focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)]"
                                 />
+                                {attachmentPreview && attachmentFile && (
+                                    <div className="mt-2 relative rounded-md border border-[var(--border-secondary)] bg-[var(--bg-secondary)] p-2">
+                                        <button
+                                            onClick={handleClearFile}
+                                            disabled={isSubmitting}
+                                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600 transition-colors z-10"
+                                            title="Remove attachment"
+                                        >
+                                            ×
+                                        </button>
+                                        {attachmentFile.type.startsWith('image/') ? (
+                                            <img src={attachmentPreview} alt="Preview" className="max-w-full max-h-[150px] object-contain mx-auto rounded-sm" />
+                                        ) : attachmentFile.type.startsWith('audio/') ? (
+                                            <audio src={attachmentPreview} controls className="w-full mt-2" />
+                                        ) : null}
+                                    </div>
+                                )}
                             </div>
                         </>
                     )}

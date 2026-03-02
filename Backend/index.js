@@ -55,6 +55,10 @@ app.use("/api/ticket", authenticateJwt, ticketRoutes);
 const analyticsRoutes = require("./routes/analyticsRoutes.js");
 app.use("/api/analytics", authenticateJwt, analyticsRoutes);
 
+const attachmentRoutes = require("./routes/attachmentRoutes");
+app.use("/api/attachments", authenticateJwt, attachmentRoutes);
+
+
 server.listen(PORT, () => {
   console.log(`HTTP server running at http://localhost:${PORT}`);
 });
