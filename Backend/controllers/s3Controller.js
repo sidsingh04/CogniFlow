@@ -12,12 +12,13 @@ const Attachment = require("../models/Attachment");
 const Ticket = require("../models/Tickets");
 
 const uploadFile = async (req, res) => {
+    let fileKey=null;
     try {
 
         if (!req.file)
             return res.status(400).json({ message: "No file uploaded" });
 
-        const fileKey =
+        fileKey =
             `uploads/${uuid()}-${req.file.originalname}`;
 
         const command = new PutObjectCommand({
@@ -39,6 +40,21 @@ const uploadFile = async (req, res) => {
         res.json({ success: true, attachment });
 
     } catch (err) {
+        //Compensation Strategy (can shift later to SQS Queue (I think))
+        if (fileKey) {
+            try {
+                const deleteCommand = new DeleteObjectCommand({
+                    Bucket: process.env.AWS_BUCKET_NAME,
+                    Key: fileKey
+                });
+
+                await s3.send(deleteCommand);
+                console.log("Compensation: S3 file deleted successfully");
+            } catch (deleteErr) {
+                console.error("Compensation failed: Could not delete S3 object", deleteErr);
+            }
+        }
+
         console.error("s3Controller.uploadFile Error:", err);
         res.status(500).json({ message: err.message });
     }

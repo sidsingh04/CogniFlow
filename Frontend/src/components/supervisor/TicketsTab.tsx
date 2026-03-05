@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import CreateTicketModal from './CreateTicketModal';
 import SupervisorTicketDetailsModal from './SupervisorTicketDetailsModal';
@@ -33,7 +33,10 @@ function useDebounce<T>(value: T, delay: number): T {
 
 export default function TicketsTab() {
     const [tickets, setTickets] = useState<Ticket[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [totalResults, setTotalResults] = useState(0);
+    const [totalPages, setTotalPages] = useState(1);
+    const [isInitialLoading, setIsInitialLoading] = useState(true);
+    const [isFiltering, setIsFiltering] = useState(false);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
 
@@ -65,24 +68,36 @@ export default function TicketsTab() {
         setCurrentPage(1);
     }, [debouncedAgentId, debouncedCode, filterStatus, filterIssueDate, filterResolvedDate]);
 
-    const fetchData = async () => {
-        setIsLoading(true);
+    const fetchFilteredTickets = async (page = currentPage) => {
+        setIsFiltering(true);
         try {
-            const res = await axios.get('http://localhost:3000/api/ticket/get-all');
+            const params: Record<string, string | number> = {
+                page,
+                limit: itemsPerPage
+            };
+
+            if (debouncedAgentId.trim()) params.agentId = debouncedAgentId.trim();
+            if (debouncedCode.trim()) params.code = debouncedCode.trim();
+            if (filterStatus !== 'All') params.status = filterStatus;
+            if (filterIssueDate) params.issueDate = filterIssueDate;
+            if (filterResolvedDate) params.resolvedDate = filterResolvedDate;
+
+            const res = await axios.get('http://localhost:3000/api/ticket/get-filtered', { params });
             if (res.data.success) {
-                // sort by issueDate descending by default
-                const sorted = res.data.tickets.sort((a: any, b: any) => new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime());
-                setTickets(sorted);
+                setTickets(res.data.tickets);
+                setTotalResults(res.data.pagination.total);
+                setTotalPages(res.data.pagination.totalPages);
             }
         } catch (error) {
             console.error("Error fetching tickets:", error);
         } finally {
-            setIsLoading(false);
+            setIsFiltering(false);
+            setIsInitialLoading(false);
         }
     };
 
     const handleViewAttachment = async (e: React.MouseEvent, ticketId: string) => {
-        e.stopPropagation(); // Prevent opening the main ticket details modal
+        e.stopPropagation();
         setAttachmentError(null);
         setAttachmentUrl(null);
         setAttachmentType(null);
@@ -107,14 +122,15 @@ export default function TicketsTab() {
         }
     };
 
+    // Fetch tickets whenever filters or page changes
     useEffect(() => {
-        fetchData();
-    }, []);
+        fetchFilteredTickets(currentPage);
+    }, [debouncedAgentId, debouncedCode, filterStatus, filterIssueDate, filterResolvedDate, currentPage]);
 
     useEffect(() => {
         socket.connect();
         const refreshTickets = () => {
-            fetchData();
+            fetchFilteredTickets(currentPage);
         };
 
         socket.on("ticketAssigned", refreshTickets);
@@ -130,52 +146,7 @@ export default function TicketsTab() {
             socket.off("ticketRejected", refreshTickets);
             socket.off("ticketUpdated", refreshTickets);
         };
-    }, []);
-
-    // Filter Logic
-    const processedTickets = useMemo(() => {
-        let result = [...tickets];
-
-        // 1. Text Filters (Debounced)
-        if (debouncedAgentId.trim()) {
-            result = result.filter(ticket =>
-                ticket.agentId.toLowerCase().includes(debouncedAgentId.toLowerCase())
-            );
-        }
-
-        if (debouncedCode.trim()) {
-            result = result.filter(ticket =>
-                ticket.code.toLowerCase().includes(debouncedCode.toLowerCase())
-            );
-        }
-
-        // 2. Status Filter
-        if (filterStatus !== 'All') {
-            result = result.filter(ticket => ticket.status.toLowerCase() === filterStatus.toLowerCase());
-        }
-
-        // 3. Date Filters
-        if (filterIssueDate) {
-            result = result.filter(ticket =>
-                new Date(ticket.issueDate).toLocaleDateString() === new Date(filterIssueDate).toLocaleDateString()
-            );
-        }
-
-        if (filterResolvedDate) {
-            result = result.filter(ticket =>
-                ticket.resolvedDate && new Date(ticket.resolvedDate).toLocaleDateString() === new Date(filterResolvedDate).toLocaleDateString()
-            );
-        }
-
-        return result;
-    }, [tickets, debouncedAgentId, debouncedCode, filterStatus, filterIssueDate, filterResolvedDate]);
-
-    // Pagination Logic
-    const totalPages = Math.ceil(processedTickets.length / itemsPerPage);
-    const paginatedTickets = processedTickets.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage
-    );
+    }, [currentPage, debouncedAgentId, debouncedCode, filterStatus, filterIssueDate, filterResolvedDate]);
 
     const StatusBadge = ({ status }: { status: string }) => {
         const config: Record<string, { bg: string, text: string, dot: string }> = {
@@ -194,7 +165,7 @@ export default function TicketsTab() {
         );
     };
 
-    if (isLoading) {
+    if (isInitialLoading) {
         return <div className="p-8 text-center text-[var(--text-muted)] italic flex-1 flex items-center justify-center">Loading tickets...</div>;
     }
 
@@ -223,7 +194,7 @@ export default function TicketsTab() {
                         Filter Controls
                     </h2>
                     <span className="text-xs font-semibold text-[var(--text-secondary)]">
-                        {processedTickets.length} result{processedTickets.length !== 1 ? 's' : ''}
+                        {totalResults} result{totalResults !== 1 ? 's' : ''}
                     </span>
                 </div>
 
@@ -341,9 +312,9 @@ export default function TicketsTab() {
                                 <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)] text-right">Attachment</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            {paginatedTickets.length > 0 ? (
-                                paginatedTickets.map((t) => (
+                        <tbody className={isFiltering ? 'opacity-50 pointer-events-none transition-opacity' : 'transition-opacity'}>
+                            {tickets.length > 0 ? (
+                                tickets.map((t: Ticket) => (
                                     <tr
                                         key={t.issueId}
                                         onClick={() => setSelectedTicket(t)}
@@ -398,7 +369,7 @@ export default function TicketsTab() {
                 {totalPages > 1 && (
                     <div className="px-5 py-3 border-t border-[var(--border-secondary)] bg-[var(--bg-tertiary)] flex justify-between items-center shrink-0">
                         <span className="text-xs text-[var(--text-secondary)]">
-                            Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, processedTickets.length)} of {processedTickets.length} entries
+                            Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, totalResults)} of {totalResults} entries
                         </span>
                         <div className="flex items-center gap-2">
                             <button
@@ -426,7 +397,7 @@ export default function TicketsTab() {
             <CreateTicketModal
                 isOpen={isCreateModalOpen}
                 onClose={() => setIsCreateModalOpen(false)}
-                onSuccess={() => fetchData()}
+                onSuccess={() => fetchFilteredTickets()}
             />
 
             <SupervisorTicketDetailsModal
@@ -434,7 +405,7 @@ export default function TicketsTab() {
                 onClose={() => setSelectedTicket(null)}
                 ticket={selectedTicket}
                 onTicketUpdate={() => {
-                    fetchData();
+                    fetchFilteredTickets();
                 }}
                 readOnly={true}
             />

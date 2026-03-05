@@ -183,16 +183,27 @@ export default function AgentDashboard() {
             }
         };
 
+        const handleForceLogout = (data: { agentId: string, timestamp: string }) => {
+            if (data.agentId === userId) {
+                alert('You have been logged out by a supervisor.');
+                sessionStorage.clear();
+                socket.disconnect();
+                navigate('/');
+            }
+        };
+
         socket.on('ticketAssigned', handleTicketAssigned);
         socket.on('ticketApprovalSent', handleTicketApprovalSent);
         socket.on('ticketResolved', handleTicketResolved);
         socket.on('ticketRejected', handleTicketRejected);
+        socket.on('forceLogout', handleForceLogout);
 
         return () => {
             socket.off('ticketAssigned', handleTicketAssigned);
             socket.off('ticketApprovalSent', handleTicketApprovalSent);
             socket.off('ticketResolved', handleTicketResolved);
             socket.off('ticketRejected', handleTicketRejected);
+            socket.off('forceLogout', handleForceLogout);
             socket.disconnect();
         };
     }, []);

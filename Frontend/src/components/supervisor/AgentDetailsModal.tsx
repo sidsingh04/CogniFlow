@@ -34,9 +34,8 @@ export default function AgentDetailsModal({ isOpen, agent, onClose }: AgentDetai
 
         setIsLoggingOut(true);
         try {
-            await axios.post('/api/polling/trigger', {
-                agentId: agent.agentId,
-                type: 'FORCE_LOGOUT'
+            await axios.post('http://localhost:3000/api/agent/force-logout', {
+                agentId: agent.agentId
             });
             alert('Force logout command sent successfully.');
             onClose();

@@ -66,7 +66,16 @@ const ticketSchema = new mongoose.Schema({
 
     rejectionHistory: [{
         type: Date
-    }]
+    }],
+
+    slaBreached: {
+        type: Boolean,
+        default: false
+    },
+
+    slaDeadline: {
+        type: Date
+    }
 
 }, { timestamps: true });
 

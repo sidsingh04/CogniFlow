@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import socket from '../../services/socket';
 import SupervisorTicketDetailsModal from './SupervisorTicketDetailsModal';
@@ -14,9 +14,6 @@ interface Ticket {
     callDuration?: number;
     remarks?: string;
 }
-
-type SortField = 'issueDate' | 'approvalDate';
-type SortOrder = 'asc' | 'desc';
 
 // Custom Hook for Debouncing Values
 function useDebounce<T>(value: T, delay: number): T {
@@ -34,7 +31,10 @@ function useDebounce<T>(value: T, delay: number): T {
 
 export default function ApprovalTab() {
     const [approvalTickets, setApprovalTickets] = useState<Ticket[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [totalResults, setTotalResults] = useState(0);
+    const [totalPages, setTotalPages] = useState(1);
+    const [isInitialLoading, setIsInitialLoading] = useState(true);
+    const [isFiltering, setIsFiltering] = useState(false);
     const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
 
     // Attachment Viewer State
@@ -55,22 +55,48 @@ export default function ApprovalTab() {
 
     const [sortOption, setSortOption] = useState('approvalDate-desc');
 
-    const fetchData = async () => {
-        setIsLoading(true);
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 10;
+
+    // Reset pagination when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [debouncedAgentId, debouncedCode, filterIssueDate, sortOption]);
+
+    const fetchFilteredApprovals = async (page = currentPage) => {
+        setIsFiltering(true);
         try {
-            const res = await axios.get('http://localhost:3000/api/ticket/get-by-status?status=approval');
+            const [sortField, sortOrder] = sortOption.split('-');
+
+            const params: Record<string, string | number> = {
+                page,
+                limit: itemsPerPage,
+                status: 'approval',
+                sortField,
+                sortOrder
+            };
+
+            if (debouncedAgentId.trim()) params.agentId = debouncedAgentId.trim();
+            if (debouncedCode.trim()) params.code = debouncedCode.trim();
+            if (filterIssueDate) params.issueDate = filterIssueDate;
+
+            const res = await axios.get('http://localhost:3000/api/ticket/get-filtered', { params });
             if (res.data.success) {
                 setApprovalTickets(res.data.tickets);
+                setTotalResults(res.data.pagination.total);
+                setTotalPages(res.data.pagination.totalPages);
             }
         } catch (error) {
             console.error("Error fetching approval tickets:", error);
         } finally {
-            setIsLoading(false);
+            setIsFiltering(false);
+            setIsInitialLoading(false);
         }
     };
 
     const handleViewAttachment = async (e: React.MouseEvent, ticketId: string) => {
-        e.stopPropagation(); // Prevent opening the main ticket details modal
+        e.stopPropagation();
         setAttachmentError(null);
         setAttachmentUrl(null);
         setAttachmentType(null);
@@ -95,14 +121,15 @@ export default function ApprovalTab() {
         }
     };
 
+    // Fetch tickets whenever filters or page changes
     useEffect(() => {
-        fetchData();
-    }, []);
+        fetchFilteredApprovals(currentPage);
+    }, [debouncedAgentId, debouncedCode, filterIssueDate, sortOption, currentPage]);
 
     useEffect(() => {
         socket.connect();
         const refreshTickets = () => {
-            fetchData();
+            fetchFilteredApprovals(currentPage);
         };
 
         socket.on("ticketAssigned", refreshTickets);
@@ -116,45 +143,9 @@ export default function ApprovalTab() {
             socket.off("ticketResolved", refreshTickets);
             socket.off("ticketRejected", refreshTickets);
         };
-    }, []);
+    }, [currentPage, debouncedAgentId, debouncedCode, filterIssueDate, sortOption]);
 
-    // Filter and Sort Logic
-    const processedTickets = useMemo(() => {
-        let result = [...approvalTickets];
-
-        // 1. Text Filters (Debounced)
-        if (debouncedAgentId.trim()) {
-            result = result.filter(ticket =>
-                ticket.agentId.toLowerCase().includes(debouncedAgentId.toLowerCase())
-            );
-        }
-
-        if (debouncedCode.trim()) {
-            result = result.filter(ticket =>
-                ticket.code.toLowerCase().includes(debouncedCode.toLowerCase())
-            );
-        }
-
-        // 2. Date Filters
-        if (filterIssueDate) {
-            result = result.filter(ticket =>
-                new Date(ticket.issueDate).toLocaleDateString() === new Date(filterIssueDate).toLocaleDateString()
-            );
-        }
-
-        // 3. Sort
-        const [field, order] = sortOption.split('-') as [SortField, SortOrder];
-        result.sort((a, b) => {
-            const dateA = new Date(field === 'issueDate' ? a.issueDate : (a.approvalDate || a.issueDate)).getTime();
-            const dateB = new Date(field === 'issueDate' ? b.issueDate : (b.approvalDate || b.issueDate)).getTime();
-
-            return order === 'asc' ? dateA - dateB : dateB - dateA;
-        });
-
-        return result;
-    }, [approvalTickets, debouncedAgentId, debouncedCode, filterIssueDate, sortOption]);
-
-    if (isLoading) {
+    if (isInitialLoading) {
         return <div className="p-8 text-center text-[var(--text-muted)] italic flex-1 flex items-center justify-center">Loading approval tickets...</div>;
     }
 
@@ -169,7 +160,7 @@ export default function ApprovalTab() {
                         Filter & Sort
                     </h2>
                     <span className="text-xs font-semibold text-[var(--text-secondary)]">
-                        {processedTickets.length} result{processedTickets.length !== 1 ? 's' : ''}
+                        {totalResults} result{totalResults !== 1 ? 's' : ''}
                     </span>
                 </div>
 
@@ -267,7 +258,7 @@ export default function ApprovalTab() {
                     </div>
                 </div>
 
-                {/* Table Area: reduced cell padding and header py to fit more items organically */}
+                {/* Table Area */}
                 <div className="flex-1 overflow-auto">
                     <table className="w-full text-left border-collapse min-w-[800px]">
                         <thead className="sticky top-0 bg-[var(--bg-secondary)] shadow-sm z-10">
@@ -280,9 +271,9 @@ export default function ApprovalTab() {
                                 <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)] text-right">Attachment</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            {processedTickets.length > 0 ? (
-                                processedTickets.map((t) => (
+                        <tbody className={isFiltering ? 'opacity-50 pointer-events-none transition-opacity' : 'transition-opacity'}>
+                            {approvalTickets.length > 0 ? (
+                                approvalTickets.map((t: Ticket) => (
                                     <tr
                                         key={t.issueId}
                                         onClick={() => setSelectedTicket(t)}
@@ -316,11 +307,11 @@ export default function ApprovalTab() {
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={5} className="py-10 text-center text-[var(--text-muted)] italic">
+                                    <td colSpan={6} className="py-10 text-center text-[var(--text-muted)] italic">
                                         <div className="flex flex-col items-center justify-center gap-3">
                                             <svg className="w-10 h-10 text-[var(--text-muted)]/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                                             <span className="text-sm">
-                                                {approvalTickets.length > 0 ? 'No tickets match your search filters.' : 'No items pending approval at this time.'}
+                                                No items pending approval at this time.
                                             </span>
                                         </div>
                                     </td>
@@ -329,6 +320,34 @@ export default function ApprovalTab() {
                         </tbody>
                     </table>
                 </div>
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                    <div className="px-5 py-3 border-t border-[var(--border-secondary)] bg-[var(--bg-tertiary)] flex justify-between items-center shrink-0">
+                        <span className="text-xs text-[var(--text-secondary)]">
+                            Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, totalResults)} of {totalResults} entries
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <button
+                                disabled={currentPage === 1}
+                                onClick={(e) => { e.stopPropagation(); setCurrentPage(p => p - 1); }}
+                                className="px-3 py-1.5 rounded bg-[var(--bg-primary)] border border-[var(--border-secondary)] text-[var(--text-primary)] text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--bg-secondary)] transition-colors"
+                            >
+                                Previous
+                            </button>
+                            <span className="text-xs font-semibold text-[var(--text-primary)] px-2">
+                                Page {currentPage} of {totalPages}
+                            </span>
+                            <button
+                                disabled={currentPage === totalPages}
+                                onClick={(e) => { e.stopPropagation(); setCurrentPage(p => p + 1); }}
+                                className="px-3 py-1.5 rounded bg-[var(--bg-primary)] border border-[var(--border-secondary)] text-[var(--text-primary)] text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[var(--bg-secondary)] transition-colors"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <SupervisorTicketDetailsModal
@@ -336,7 +355,7 @@ export default function ApprovalTab() {
                 onClose={() => setSelectedTicket(null)}
                 ticket={selectedTicket}
                 onTicketUpdate={() => {
-                    fetchData();
+                    fetchFilteredApprovals();
                 }}
             />
 

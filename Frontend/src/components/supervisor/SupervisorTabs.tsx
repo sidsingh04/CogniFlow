@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import TicketsTab from './TicketsTab';
 import AgentsTab from './AgentsTab';
 import AnalyticsTab from './AnalyticsTab';
+import SlaAnalyticsTab from './SlaAnalyticsTab';
 import ApprovalTab from './ApprovalTab';
 
 interface SupervisorTabsProps {
@@ -11,7 +12,7 @@ interface SupervisorTabsProps {
 
 export default function SupervisorTabs({ supervisor }: SupervisorTabsProps) {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState<'tickets' | 'approval' | 'agents' | 'analytics'>('tickets');
+    const [activeTab, setActiveTab] = useState<'tickets' | 'approval' | 'agents' | 'analytics' | 'slaAnalytics'>('tickets');
 
     const handleSignOut = () => {
         if (window.confirm('Are you sure you want to sign out?')) {
@@ -29,7 +30,7 @@ export default function SupervisorTabs({ supervisor }: SupervisorTabsProps) {
                         onClick={() => setActiveTab('tickets')}
                         className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium text-sm cursor-pointer ${activeTab === 'tickets'
                             ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-bold'
-                            : 'text-[var(--text-secondary)] hover:bg-gray-100 hover:text-[var(--text-primary)]'
+                            : 'text-[var(--text-secondary)] hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-[var(--bg-tertiary)] dark:hover:text-white'
                             }`}
                     >
                         <span>Tickets</span>
@@ -39,7 +40,7 @@ export default function SupervisorTabs({ supervisor }: SupervisorTabsProps) {
                         onClick={() => setActiveTab('approval')}
                         className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium text-sm cursor-pointer ${activeTab === 'approval'
                             ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-bold'
-                            : 'text-[var(--text-secondary)] hover:bg-gray-100 hover:text-[var(--text-primary)]'
+                            : 'text-[var(--text-secondary)] hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-[var(--bg-tertiary)] dark:hover:text-white'
                             }`}
                     >
                         <span>Approval</span>
@@ -49,7 +50,7 @@ export default function SupervisorTabs({ supervisor }: SupervisorTabsProps) {
                         onClick={() => setActiveTab('agents')}
                         className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium text-sm cursor-pointer ${activeTab === 'agents'
                             ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-bold'
-                            : 'text-[var(--text-secondary)] hover:bg-gray-100 hover:text-[var(--text-primary)]'
+                            : 'text-[var(--text-secondary)] hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-[var(--bg-tertiary)] dark:hover:text-white'
                             }`}
                     >
                         <span>Agents</span>
@@ -59,10 +60,20 @@ export default function SupervisorTabs({ supervisor }: SupervisorTabsProps) {
                         onClick={() => setActiveTab('analytics')}
                         className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium text-sm cursor-pointer ${activeTab === 'analytics'
                             ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-bold'
-                            : 'text-[var(--text-secondary)] hover:bg-gray-100 hover:text-[var(--text-primary)]'
+                            : 'text-[var(--text-secondary)] hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-[var(--bg-tertiary)] dark:hover:text-white'
                             }`}
                     >
                         <span>Analytics</span>
+                    </button>
+
+                    <button
+                        onClick={() => setActiveTab('slaAnalytics')}
+                        className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium text-sm cursor-pointer ${activeTab === 'slaAnalytics'
+                            ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-bold'
+                            : 'text-[var(--text-secondary)] hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-[var(--bg-tertiary)] dark:hover:text-white'
+                            }`}
+                    >
+                        <span>SLA Analytics</span>
                     </button>
                 </div>
 
@@ -86,6 +97,7 @@ export default function SupervisorTabs({ supervisor }: SupervisorTabsProps) {
                 {activeTab === 'approval' && <ApprovalTab />}
                 {activeTab === 'agents' && <AgentsTab />}
                 {activeTab === 'analytics' && <AnalyticsTab />}
+                {activeTab === 'slaAnalytics' && <SlaAnalyticsTab />}
             </div>
         </div>
     );

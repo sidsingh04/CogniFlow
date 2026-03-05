@@ -4,6 +4,7 @@ const Ticket = require("../models/Tickets");
 const Agent = require("../models/Agent");
 const IdempotencyKey = require("../models/IdempotencyKey");
 const { getIO } = require("../socket");
+// const { sendSLACheckJob } = require("./sqsController");
 
 async function createTicket(req, res) {
     try {
@@ -21,11 +22,17 @@ async function createTicket(req, res) {
             description,
             agentId,
             agent: agent._id,
+            slaBreached: false,
+            slaDeadline: new Date(Date.now() + 24 * 60 * 60 * 1000),
             status: status || 'pending',
             issueDate: issueDate || new Date(),
             remarks: req.body.remarks || "Initial ticket creation"
         });
+
         await ticket.save();
+
+        // Schedule SLA check job
+        // await sendSLACheckJob(ticket._id);
 
         // Update agent status to 'Busy' if they aren't 'Offline', and increment totalPending
         agent.totalPending += 1;
@@ -362,6 +369,74 @@ async function getPaginatedHistory(req, res) {
     }
 }
 
+async function getFilteredTickets(req, res) {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        const { agentId, code, status, issueDate, resolvedDate, sortField, sortOrder } = req.query;
+
+        // Build query dynamically
+        const query = {};
+
+        if (agentId && agentId.trim()) {
+            query.agentId = { $regex: agentId.trim(), $options: 'i' };
+        }
+
+        if (code && code.trim()) {
+            query.code = { $regex: code.trim(), $options: 'i' };
+        }
+
+        if (status && status !== 'All') {
+            query.status = status.toLowerCase();
+        }
+
+        if (issueDate) {
+            const start = new Date(issueDate);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(issueDate);
+            end.setHours(23, 59, 59, 999);
+            query.issueDate = { $gte: start, $lte: end };
+        }
+
+        if (resolvedDate) {
+            const start = new Date(resolvedDate);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(resolvedDate);
+            end.setHours(23, 59, 59, 999);
+            query.resolvedDate = { $gte: start, $lte: end };
+        }
+
+        // Build sort object
+        const validSortFields = ['issueDate', 'approvalDate', 'resolvedDate'];
+        const field = validSortFields.includes(sortField) ? sortField : 'issueDate';
+        const order = sortOrder === 'asc' ? 1 : -1;
+
+        const [tickets, total] = await Promise.all([
+            Ticket.find(query)
+                .sort({ [field]: order })
+                .skip(skip)
+                .limit(limit),
+            Ticket.countDocuments(query)
+        ]);
+
+        return res.json({
+            success: true,
+            tickets,
+            pagination: {
+                total,
+                page,
+                totalPages: Math.ceil(total / limit),
+                limit
+            }
+        });
+    } catch (error) {
+        console.error("Error getting filtered tickets:", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+}
+
 module.exports = {
     createTicket,
     getTicketById,
@@ -369,5 +444,6 @@ module.exports = {
     getTicketsByStatus,
     getTicketsByAgentId,
     getAllTickets,
-    getPaginatedHistory
+    getPaginatedHistory,
+    getFilteredTickets
 };

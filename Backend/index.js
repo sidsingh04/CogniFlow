@@ -58,7 +58,17 @@ app.use("/api/analytics", authenticateJwt, analyticsRoutes);
 const attachmentRoutes = require("./routes/attachmentRoutes");
 app.use("/api/attachments", authenticateJwt, attachmentRoutes);
 
+const slaRoutes = require("./routes/slaRoutes");
+app.use("/api/sla", authenticateJwt, slaRoutes);
+
+const forceLogoutRoutes = require("./routes/forceLogoutRoutes");
+app.use("/api/agent", authenticateJwt, forceLogoutRoutes);
+
 
 server.listen(PORT, () => {
   console.log(`HTTP server running at http://localhost:${PORT}`);
+
+  // Start the force-logout SQS worker in-process
+  const { startForceLogoutWorker } = require("./worker/forceLogoutWorker");
+  startForceLogoutWorker();
 });
