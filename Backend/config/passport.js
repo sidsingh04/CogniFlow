@@ -6,7 +6,7 @@ dotenv.config();
 
 const opts = {
     jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-    secretOrKey: process.env.JWT_SECRET || 'fallback_secret_for_development',
+    secretOrKey: process.env.JWT_SECRET,
 };
 
 module.exports = (passport) => {

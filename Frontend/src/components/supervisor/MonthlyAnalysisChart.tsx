@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import axiosInstance from '../../utils/axiosInstance';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
@@ -13,10 +13,7 @@ export default function MonthlyAnalysisChart() {
     useEffect(() => {
         const fetchMonths = async () => {
             try {
-                const token = localStorage.getItem('token');
-                const res = await axios.get('http://localhost:3000/api/analytics/available-months', {
-                    headers: token ? { Authorization: `Bearer ${token}` } : {}
-                });
+                const res = await axiosInstance.get('/api/analytics/available-months');
                 if (res.data.success) {
                     const months = res.data.availableMonths;
                     setAvailableMonths(months);
@@ -37,10 +34,7 @@ export default function MonthlyAnalysisChart() {
     const fetchMonthlyData = async () => {
         if (!selectedMonth) return;
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get(`http://localhost:3000/api/analytics/monthly-data?month=${selectedMonth}`, {
-                headers: token ? { Authorization: `Bearer ${token}` } : {}
-            });
+            const res = await axiosInstance.get(`/api/analytics/monthly-data?month=${selectedMonth}`);
             if (res.data.success) {
                 setChartData(res.data.days);
             }

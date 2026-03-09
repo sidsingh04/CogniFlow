@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import axiosInstance from '../../utils/axiosInstance';
 import { v4 as uuidv4 } from "uuid";
 
 interface SupervisorTicketDetailsModalProps {
@@ -34,8 +34,8 @@ export default function SupervisorTicketDetailsModal({ isOpen, onClose, ticket, 
                 updatedTicket.resolvedDate = new Date().toUTCString();
             }
 
-            await axios.put(
-                "http://localhost:3000/api/ticket/update",
+            await axiosInstance.put(
+                "/api/ticket/update",
                 updatedTicket,
                 {
                     headers: {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axiosInstance from '../utils/axiosInstance';
 import { useNavigate } from 'react-router-dom';
 import AgentTopBar from '../components/agent/AgentTopBar';
 import AgentTabs from '../components/agent/AgentTabs';
@@ -26,10 +26,10 @@ export default function AgentDashboard() {
                 return;
             }
 
-            const agentRes = await axios.get(`http://localhost:3000/api/agent/get-agent?agentId=${userId}`);
+            const agentRes = await axiosInstance.get(`/api/agent/get-agent?agentId=${userId}`);
             let currentAgent = agentRes.data.agent;
 
-            const ticketsRes = await axios.get(`http://localhost:3000/api/ticket/get-by-agentId?agentId=${userId}`);
+            const ticketsRes = await axiosInstance.get(`/api/ticket/get-by-agentId?agentId=${userId}`);
             const currentTickets = ticketsRes.data.success ? ticketsRes.data.tickets : [];
             setTickets(currentTickets);
 
@@ -39,7 +39,7 @@ export default function AgentDashboard() {
                 currentAgent.status = 'Busy';
             }
 
-            await axios.post('http://localhost:3000/api/agent/update-status', {
+            await axiosInstance.post('/api/agent/update-status', {
                 agentId: userId,
                 status: currentAgent.status
             });
@@ -192,11 +192,35 @@ export default function AgentDashboard() {
             }
         };
 
+        const handleSlaWarning = (data: { agentId: string, issueId: string, hoursRemaining: number }) => {
+            if (data.agentId === userId) {
+                setNotifications(prev => [{
+                    id: 'sla-warning-' + data.issueId + '-' + Date.now(),
+                    message: `⚠️ Ticket ${data.issueId}: ${data.hoursRemaining} hours until SLA breach`,
+                    timestamp: new Date().toISOString(),
+                    type: 'rejected'
+                }, ...prev]);
+            }
+        };
+
+        const handleSlaBreach = (data: { agentId: string, issueId: string }) => {
+            if (data.agentId === userId) {
+                setNotifications(prev => [{
+                    id: 'sla-breach-' + data.issueId + '-' + Date.now(),
+                    message: `🚨 Ticket ${data.issueId}: SLA has been breached`,
+                    timestamp: new Date().toISOString(),
+                    type: 'rejected'
+                }, ...prev]);
+            }
+        };
+
         socket.on('ticketAssigned', handleTicketAssigned);
         socket.on('ticketApprovalSent', handleTicketApprovalSent);
         socket.on('ticketResolved', handleTicketResolved);
         socket.on('ticketRejected', handleTicketRejected);
         socket.on('forceLogout', handleForceLogout);
+        socket.on('slaWarning', handleSlaWarning);
+        socket.on('slaBreach', handleSlaBreach);
 
         return () => {
             socket.off('ticketAssigned', handleTicketAssigned);
@@ -204,6 +228,8 @@ export default function AgentDashboard() {
             socket.off('ticketResolved', handleTicketResolved);
             socket.off('ticketRejected', handleTicketRejected);
             socket.off('forceLogout', handleForceLogout);
+            socket.off('slaWarning', handleSlaWarning);
+            socket.off('slaBreach', handleSlaBreach);
             socket.disconnect();
         };
     }, []);

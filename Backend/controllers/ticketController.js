@@ -4,7 +4,7 @@ const Ticket = require("../models/Tickets");
 const Agent = require("../models/Agent");
 const IdempotencyKey = require("../models/IdempotencyKey");
 const { getIO } = require("../socket");
-// const { sendSLACheckJob } = require("./sqsController");
+const { scheduleSLACheck, scheduleSLAWarning, cancelSLASchedules } = require("./sqsController");
 
 async function createTicket(req, res) {
     try {
@@ -31,8 +31,9 @@ async function createTicket(req, res) {
 
         await ticket.save();
 
-        // Schedule SLA check job
-        // await sendSLACheckJob(ticket._id);
+        // Schedule SLA check and warning via EventBridge
+        scheduleSLACheck(ticket._id, ticket.slaDeadline);
+        scheduleSLAWarning(ticket._id, ticket.slaDeadline);
 
         // Update agent status to 'Busy' if they aren't 'Offline', and increment totalPending
         agent.totalPending += 1;
@@ -200,6 +201,8 @@ async function updateTicket(req, res) {
                     io.emit("ticketApprovalSent", payload);
                 } else if (previousStatus === 'approval' && ticket.status === 'resolved') {
                     io.emit("ticketResolved", payload);
+                    // Cancel pending SLA schedules since ticket is resolved
+                    cancelSLASchedules(ticket._id);
                 } else if (previousStatus === 'approval' && ticket.status === 'pending') {
                     io.emit("ticketRejected", payload);
                 } else {

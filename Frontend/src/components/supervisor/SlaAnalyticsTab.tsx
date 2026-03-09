@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import axiosInstance from '../../utils/axiosInstance';
 import socket from '../../services/socket';
 import BreachedAgentTicketsModal from './BreachedAgentTicketsModal';
 
@@ -56,10 +56,7 @@ export default function SlaAnalyticsTab() {
     const fetchMetrics = async (isBackgroundLoad = false) => {
         if (!isBackgroundLoad) setIsLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
-            const res = await axios.get('http://localhost:3000/api/sla/dashboard-metrics', { headers });
+            const res = await axiosInstance.get('/api/sla/dashboard-metrics');
 
             if (res.data.success) {
                 setMetrics(res.data.data);
@@ -74,10 +71,7 @@ export default function SlaAnalyticsTab() {
 
     const fetchBreachedTickets = async (page = 1) => {
         try {
-            const token = localStorage.getItem('token');
-            const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
-            const res = await axios.get(`http://localhost:3000/api/sla/breached-tickets?page=${page}&limit=10`, { headers });
+            const res = await axiosInstance.get(`/api/sla/breached-tickets?page=${page}&limit=10`);
 
             if (res.data.success) {
                 setBreachedTickets(res.data.data);
@@ -92,10 +86,7 @@ export default function SlaAnalyticsTab() {
 
     const fetchBreachedAgents = async (page = 1) => {
         try {
-            const token = localStorage.getItem('token');
-            const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
-            const res = await axios.get(`http://localhost:3000/api/sla/breached-agents?page=${page}&limit=10`, { headers });
+            const res = await axiosInstance.get(`/api/sla/breached-agents?page=${page}&limit=10`);
 
             if (res.data.success) {
                 setBreachedAgents(res.data.data);
@@ -111,10 +102,7 @@ export default function SlaAnalyticsTab() {
     const handleScanBreaches = async () => {
         setIsScanning(true);
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.post('http://localhost:3000/api/sla/scan-breaches', {}, {
-                headers: token ? { Authorization: `Bearer ${token}` } : {}
-            });
+            const res = await axiosInstance.post('/api/sla/scan-breaches');
             if (res.data.success) {
                 // Refresh metrics after scanning
                 await fetchMetrics(true);

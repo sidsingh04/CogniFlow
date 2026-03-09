@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axiosInstance from '../../utils/axiosInstance';
 import { v4 as uuidv4 } from "uuid";
 
 interface TicketDetailsModalProps {
@@ -77,8 +77,8 @@ export default function TicketDetailsModal({ isOpen, onClose, ticket, agent, onT
                 formData.append('file', attachmentFile);
                 formData.append('ticketId', ticket._id);
 
-                await axios.post(
-                    'http://localhost:3000/api/attachments/upload',
+                await axiosInstance.post(
+                    '/api/attachments/upload',
                     formData,
                     {
                         headers: {
@@ -89,15 +89,15 @@ export default function TicketDetailsModal({ isOpen, onClose, ticket, agent, onT
             }
 
             const updatedTicket = {
-                ...ticket,
+                issueId: ticket.issueId,
                 status: 'approval',
                 remarks,
                 callDuration: duration,
                 approvalDate: new Date().toUTCString(),
             };
 
-            await axios.put(
-                'http://localhost:3000/api/ticket/update',
+            await axiosInstance.put(
+                '/api/ticket/update',
                 updatedTicket,
                 {
                     headers: {

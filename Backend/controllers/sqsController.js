@@ -1,84 +1,176 @@
-const { SendMessageCommand } = require("@aws-sdk/client-sqs");
-
-const sqs = require("../config/sqs");
-
-const Ticket = require("../models/Ticket");
+const { CreateScheduleCommand, DeleteScheduleCommand } = require("@aws-sdk/client-scheduler");
+const schedulerClient = require("../config/eventBridgeScheduler");
+const Ticket = require("../models/Tickets");
 const Agent = require("../models/Agent");
 
-
-exports.sendSLACheckJob = async (ticketId) => {
-
+/**
+ * Create a one-time EventBridge schedule that sends an SLA_CHECK message
+ * to the SQS queue at the exact slaDeadline.
+ */
+async function scheduleSLACheck(ticketId, slaDeadline) {
     try {
+        const scheduleTime = new Date(slaDeadline);
+        // EventBridge expects: at(yyyy-MM-ddTHH:mm:ss)
+        const expression = `at(${scheduleTime.toISOString().replace(/\.\d{3}Z$/, '')})`;
 
-        const command = new SendMessageCommand({
-            QueueUrl: process.env.SQS_QUEUE_URL,
-
-            MessageBody: JSON.stringify({
-                eventType: "SLA_CHECK",
-                ticketId: ticketId
-            }),
-
-            // 24 hours delay
-            DelaySeconds: 86400
+        const command = new CreateScheduleCommand({
+            Name: `sla-check-${ticketId}`,
+            ScheduleExpression: expression,
+            ScheduleExpressionTimezone: "UTC",
+            FlexibleTimeWindow: { Mode: "OFF" },
+            ActionAfterCompletion: "DELETE",
+            Target: {
+                Arn: process.env.SLS_QUEUE_ARN,
+                RoleArn: process.env.SCHEDULER_ROLE_ARN,
+                Input: JSON.stringify({
+                    eventType: "SLA_CHECK",
+                    ticketId: ticketId.toString()
+                })
+            }
         });
 
-        await sqs.send(command);
-
-        console.log(`SLA job scheduled for ticket ${ticketId}`);
-
+        await schedulerClient.send(command);
+        console.log(`[SLA] Breach check scheduled for ticket ${ticketId} at ${scheduleTime.toISOString()}`);
     } catch (error) {
-        console.error("Failed to send SQS message", error);
+        console.error(`[SLA] Failed to schedule breach check for ticket ${ticketId}:`, error.message);
     }
-};
+}
 
+/**
+ * Create a one-time EventBridge schedule that sends an SLA_WARNING message
+ * to the SQS queue 2 hours before the slaDeadline.
+ */
+async function scheduleSLAWarning(ticketId, slaDeadline) {
+    try {
+        const warningTime = new Date(new Date(slaDeadline).getTime() - 2 * 60 * 60 * 1000);
 
-exports.processMessage = async (message) => {
+        // If warning time is already in the past, skip
+        if (warningTime <= new Date()) {
+            console.log(`[SLA] Warning time already passed for ticket ${ticketId}, skipping warning schedule`);
+            return;
+        }
 
+        const expression = `at(${warningTime.toISOString().replace(/\.\d{3}Z$/, '')})`;
+
+        const command = new CreateScheduleCommand({
+            Name: `sla-warning-${ticketId}`,
+            ScheduleExpression: expression,
+            ScheduleExpressionTimezone: "UTC",
+            FlexibleTimeWindow: { Mode: "OFF" },
+            ActionAfterCompletion: "DELETE",
+            Target: {
+                Arn: process.env.SLS_QUEUE_ARN,
+                RoleArn: process.env.SCHEDULER_ROLE_ARN,
+                Input: JSON.stringify({
+                    eventType: "SLA_WARNING",
+                    ticketId: ticketId.toString()
+                })
+            }
+        });
+
+        await schedulerClient.send(command);
+        console.log(`[SLA] Warning scheduled for ticket ${ticketId} at ${warningTime.toISOString()}`);
+    } catch (error) {
+        console.error(`[SLA] Failed to schedule warning for ticket ${ticketId}:`, error.message);
+    }
+}
+
+/**
+ * Cancel both SLA schedules when a ticket is resolved before the deadline.
+ * Silently ignores ResourceNotFoundException (schedule already fired/deleted).
+ */
+async function cancelSLASchedules(ticketId) {
+    const names = [`sla-check-${ticketId}`, `sla-warning-${ticketId}`];
+
+    for (const name of names) {
+        try {
+            await schedulerClient.send(new DeleteScheduleCommand({ Name: name }));
+            console.log(`[SLA] Cancelled schedule: ${name}`);
+        } catch (error) {
+            if (error.name === "ResourceNotFoundException") {
+                console.log(`[SLA] Schedule ${name} already fired or not found, skipping`);
+            } else {
+                console.error(`[SLA] Failed to cancel schedule ${name}:`, error.message);
+            }
+        }
+    }
+}
+
+/**
+ * Process an SQS message from the SLA queue.
+ * Returns { eventType, ticketId, agentId, issueId } for the worker to emit socket events.
+ */
+async function processMessage(message) {
     const { eventType, ticketId } = message;
 
     switch (eventType) {
-
         case "SLA_CHECK":
-            await handleSLABreach(ticketId);
-            break;
-
+            return await handleSLABreach(ticketId);
+        case "SLA_WARNING":
+            return await handleSLAWarning(ticketId);
         default:
-            console.log("Unknown event type");
+            console.log(`[SLA] Unknown event type: ${eventType}`);
+            return null;
     }
-};
-
+}
 
 async function handleSLABreach(ticketId) {
-
     const ticket = await Ticket.findById(ticketId);
 
     if (!ticket) {
-        console.log("Ticket not found");
-        return;
+        console.log(`[SLA] Ticket ${ticketId} not found`);
+        return null;
     }
 
-    // already resolved
-    if (ticket.status === "RESOLVED") {
-        console.log("Ticket already resolved");
-        return;
+    if (ticket.status === "resolved") {
+        console.log(`[SLA] Ticket ${ticketId} already resolved, skipping breach`);
+        return null;
     }
-
 
     if (ticket.slaBreached) {
-        console.log("SLA already processed");
-        return;
+        console.log(`[SLA] Ticket ${ticketId} already breached, skipping`);
+        return null;
     }
 
-    // mark breach
     ticket.slaBreached = true;
     await ticket.save();
 
-    // increment agent SLA breach counter
-    await Agent.updateOne(
-        { _id: ticket.agentId },
-        { $inc: { slaBreaches: 1 } }
-    );
+    console.log(`[SLA] BREACHED: ticket ${ticketId} (${ticket.issueId})`);
 
-
-    console.log(`SLA BREACHED for ticket ${ticketId}`);
+    return {
+        eventType: "SLA_CHECK",
+        agentId: ticket.agentId,
+        issueId: ticket.issueId,
+        ticketId: ticketId.toString()
+    };
 }
+
+async function handleSLAWarning(ticketId) {
+    const ticket = await Ticket.findById(ticketId);
+
+    if (!ticket) {
+        console.log(`[SLA] Ticket ${ticketId} not found`);
+        return null;
+    }
+
+    if (ticket.status === "resolved") {
+        console.log(`[SLA] Ticket ${ticketId} already resolved, skipping warning`);
+        return null;
+    }
+
+    console.log(`[SLA] WARNING: ticket ${ticketId} (${ticket.issueId}) - 2h until breach`);
+
+    return {
+        eventType: "SLA_WARNING",
+        agentId: ticket.agentId,
+        issueId: ticket.issueId,
+        ticketId: ticketId.toString()
+    };
+}
+
+module.exports = {
+    scheduleSLACheck,
+    scheduleSLAWarning,
+    cancelSLASchedules,
+    processMessage
+};

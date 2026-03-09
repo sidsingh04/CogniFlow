@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import axiosInstance from '../../utils/axiosInstance';
 
 interface CreateTicketModalProps {
     isOpen: boolean;
@@ -39,7 +39,7 @@ export default function CreateTicketModal({ isOpen, onClose, onSuccess }: Create
         searchTimeoutRef.current = setTimeout(async () => {
             setIsSearching(true);
             try {
-                const res = await axios.get('http://localhost:3000/api/agent/getAllAgents');
+                const res = await axiosInstance.get('/api/agent/getAllAgents');
                 if (res.data.success) {
                     const filtered = res.data.agents.filter((a: any) =>
                     (a.agentId.toLowerCase().includes(agentSearch.toLowerCase()) ||
@@ -84,15 +84,15 @@ export default function CreateTicketModal({ isOpen, onClose, onSuccess }: Create
             };
 
             // 1. Create ticket
-            await axios.post('http://localhost:3000/api/ticket/create', ticketData);
+            await axiosInstance.post('/api/ticket/create', ticketData);
 
             // 2. Update agent status to busy
-            const agentRes = await axios.get(`http://localhost:3000/api/agent/get-agent?agentId=${selectedAgentId}`);
+            const agentRes = await axiosInstance.get(`/api/agent/get-agent?agentId=${selectedAgentId}`);
             if (agentRes.data.success) {
                 const agent = agentRes.data.agent;
                 agent.totalPending += 1;
                 agent.status = 'Busy';
-                await axios.put('http://localhost:3000/api/agent/update', agent);
+                await axiosInstance.put('/api/agent/update', agent);
             }
 
             // Reset form and close

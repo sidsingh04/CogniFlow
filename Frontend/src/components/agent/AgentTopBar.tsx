@@ -1,5 +1,5 @@
 import React from 'react';
-import axios from 'axios';
+import axiosInstance from '../../utils/axiosInstance';
 
 interface AgentTopBarProps {
     agent: any;
@@ -14,7 +14,7 @@ export default function AgentTopBar({ agent, setAgent }: AgentTopBarProps) {
         setAgent(updatedAgent);
 
         try {
-            await axios.put('http://localhost:3000/api/agent/update', updatedAgent);
+            await axiosInstance.put('/api/agent/update', updatedAgent);
         } catch (e) {
             console.error("Status update failed", e);
         }

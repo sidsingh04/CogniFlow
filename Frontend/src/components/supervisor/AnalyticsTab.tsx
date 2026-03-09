@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import axiosInstance from '../../utils/axiosInstance';
 import {
     PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend
 } from 'recharts';
@@ -19,10 +19,7 @@ export default function AnalyticsTab() {
         const fetchMetrics = async (isBackgroundLoad = false) => {
             if (!isBackgroundLoad) setIsLoading(true);
             try {
-                const token = localStorage.getItem('token');
-                const res = await axios.get('http://localhost:3000/api/analytics/metrics', {
-                    headers: token ? { Authorization: `Bearer ${token}` } : {}
-                });
+                const res = await axiosInstance.get('/api/analytics/metrics');
                 if (res.data.success) {
                     setMetrics(res.data.metrics);
                     setIssueTypesData(res.data.issueTypesData);

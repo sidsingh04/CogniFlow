@@ -5,6 +5,7 @@ const http = require("http");
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 const passport = require("passport");
 const { authenticateJwt } = require("./middleware/authMiddleware");
 
@@ -27,7 +28,10 @@ const { initSocket } = require("./socket");
 initSocket(server);
 
 app.use(express.json());
+app.use(cookieParser());
 app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true,
   exposedHeaders: ['x-idempotency-key'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-idempotency-key']
 }));
@@ -71,4 +75,8 @@ server.listen(PORT, () => {
   // Start the force-logout SQS worker in-process
   const { startForceLogoutWorker } = require("./worker/forceLogoutWorker");
   startForceLogoutWorker();
+
+  // Start the SLA breach/warning SQS worker in-process
+  const { startSLAWorker } = require("./worker/slaWorker");
+  startSLAWorker();
 });

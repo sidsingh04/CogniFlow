@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axiosInstance from '../../utils/axiosInstance';
 import CreateTicketModal from './CreateTicketModal';
 import SupervisorTicketDetailsModal from './SupervisorTicketDetailsModal';
 import socket from '../../services/socket';
@@ -82,7 +82,7 @@ export default function TicketsTab() {
             if (filterIssueDate) params.issueDate = filterIssueDate;
             if (filterResolvedDate) params.resolvedDate = filterResolvedDate;
 
-            const res = await axios.get('http://localhost:3000/api/ticket/get-filtered', { params });
+            const res = await axiosInstance.get('/api/ticket/get-filtered', { params });
             if (res.data.success) {
                 setTickets(res.data.tickets);
                 setTotalResults(res.data.pagination.total);
@@ -105,7 +105,7 @@ export default function TicketsTab() {
         setIsFetchingAttachment(true);
 
         try {
-            const res = await axios.get(`http://localhost:3000/api/attachments/ticket/${ticketId}`);
+            const res = await axiosInstance.get(`/api/attachments/ticket/${ticketId}`);
             if (res.data.success) {
                 setAttachmentUrl(res.data.url);
                 setAttachmentType(res.data.fileType);

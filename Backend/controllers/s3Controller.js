@@ -12,7 +12,7 @@ const Attachment = require("../models/Attachment");
 const Ticket = require("../models/Tickets");
 
 const uploadFile = async (req, res) => {
-    let fileKey=null;
+    let fileKey = null;
     try {
 
         if (!req.file)
@@ -122,7 +122,7 @@ const getFileByTicketId = async (req, res) => {
             return res.status(404).json({ success: false, message: "Ticket not found" });
         }
 
-        const attachment = await Attachment.findOne({ ticket: ticketDoc._id });
+        const attachment = await Attachment.findOne({ ticket: ticketDoc._id }).sort({ createdAt: -1 });
 
         if (!attachment) {
             return res.status(404).json({ success: false, message: "No attachment found for this ticket" });

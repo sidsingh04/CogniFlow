@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import axiosInstance from '../../utils/axiosInstance';
 
 interface Agent {
     agentId: string;
@@ -34,7 +34,7 @@ export default function AgentDetailsModal({ isOpen, agent, onClose }: AgentDetai
 
         setIsLoggingOut(true);
         try {
-            await axios.post('http://localhost:3000/api/agent/force-logout', {
+            await axiosInstance.post('/api/agent/force-logout', {
                 agentId: agent.agentId
             });
             alert('Force logout command sent successfully.');

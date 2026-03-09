@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import axiosInstance from '../../utils/axiosInstance';
 import AgentDetailsModal from './AgentDetailsModal';
 import socket from '../../services/socket';
 
@@ -45,14 +45,12 @@ export default function AgentsTab() {
         if (!isBackgroundLoad) setIsLoading(true);
         setIsFetching(true);
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get('http://localhost:3000/api/agent/getPaginatedAgents', {
+            const res = await axiosInstance.get('/api/agent/getPaginatedAgents', {
                 params: {
                     page: currentPage,
                     limit: 5,
                     search: debouncedSearchQuery
-                },
-                headers: token ? { Authorization: `Bearer ${token}` } : {}
+                }
             });
             if (res.data.success) {
                 setAgents(res.data.agents);
@@ -69,10 +67,7 @@ export default function AgentsTab() {
 
     const fetchMetrics = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get('http://localhost:3000/api/analytics/agent-status-metrics', {
-                headers: token ? { Authorization: `Bearer ${token}` } : {}
-            });
+            const res = await axiosInstance.get('/api/analytics/agent-status-metrics');
             if (res.data.success) {
                 setMetrics(res.data.metrics);
             }

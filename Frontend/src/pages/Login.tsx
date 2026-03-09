@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import axiosInstance, { setAccessToken } from '../utils/axiosInstance';
 
 type Role = 'Agent' | 'Supervisor';
 
@@ -18,7 +18,7 @@ export default function Login() {
 
         if (role === 'Agent') {
             try {
-                const response = await axios.post("http://localhost:3000/api/login/agent", {
+                const response = await axiosInstance.post("/api/login/agent", {
                     userId,
                     password
                 });
@@ -28,7 +28,7 @@ export default function Login() {
 
                     const { token } = response.data;
                     if (token) {
-                        sessionStorage.setItem("token", token);
+                        setAccessToken(token);
                     }
 
                     sessionStorage.setItem("isAuthenticated", "true");
@@ -44,7 +44,7 @@ export default function Login() {
             }
         } else {
             try {
-                const response = await axios.post("http://localhost:3000/api/login/supervisor", {
+                const response = await axiosInstance.post("/api/login/supervisor", {
                     userId,
                     password
                 });
@@ -54,7 +54,7 @@ export default function Login() {
 
                     const { token } = response.data;
                     if (token) {
-                        sessionStorage.setItem("token", token);
+                        setAccessToken(token);
                     }
 
                     sessionStorage.setItem("isAuthenticated", "true");

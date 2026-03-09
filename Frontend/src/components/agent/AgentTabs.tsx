@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import axiosInstance, { setAccessToken } from '../../utils/axiosInstance';
 
 interface AgentTabsProps {
     agent: any;
@@ -34,10 +34,16 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
         }
 
         try {
-            await axios.post('http://localhost:3000/api/agent/update-status', {
+            await axiosInstance.post('/api/agent/update-status', {
                 agentId: agent?.agentId,
                 status: 'Offline'
             });
+            try {
+                await axiosInstance.post('/api/login/logout');
+            } catch (e) {
+                console.error("Logout API call failed", e);
+            }
+            setAccessToken(null);
             sessionStorage.clear();
             navigate('/');
         } catch (e) {
@@ -61,7 +67,7 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
         const fetchPaginatedHistory = async () => {
             setIsLoadingHistory(true);
             try {
-                const res = await axios.get(`http://localhost:3000/api/ticket/get-paginated-history`, {
+                const res = await axiosInstance.get('/api/ticket/get-paginated-history', {
                     params: {
                         agentId: agent.agentId,
                         page: historyPage,

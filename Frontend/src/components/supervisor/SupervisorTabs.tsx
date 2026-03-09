@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axiosInstance, { setAccessToken } from '../../utils/axiosInstance';
 import TicketsTab from './TicketsTab';
 import AgentsTab from './AgentsTab';
 import AnalyticsTab from './AnalyticsTab';
@@ -14,8 +15,14 @@ export default function SupervisorTabs({ supervisor }: SupervisorTabsProps) {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<'tickets' | 'approval' | 'agents' | 'analytics' | 'slaAnalytics'>('tickets');
 
-    const handleSignOut = () => {
+    const handleSignOut = async () => {
         if (window.confirm('Are you sure you want to sign out?')) {
+            try {
+                await axiosInstance.post('/api/login/logout');
+            } catch (e) {
+                console.error("Logout API call failed", e);
+            }
+            setAccessToken(null);
             sessionStorage.clear();
             navigate('/');
         }

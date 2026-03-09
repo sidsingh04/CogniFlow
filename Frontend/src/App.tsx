@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import AgentDashboard from './pages/AgentDashboard';
 import SupervisorDashboard from './pages/SupervisorDashboard';
+import axiosInstance, { setAccessToken } from './utils/axiosInstance';
 import './App.css';
 
 const ProtectedRoute = ({ children, requiredRole }: { children: React.ReactNode, requiredRole?: string }) => {
@@ -19,6 +20,40 @@ const ProtectedRoute = ({ children, requiredRole }: { children: React.ReactNode,
 };
 
 function App() {
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+
+  // On app load, attempt to silently refresh the access token
+  // using the httpOnly refresh cookie (if it exists)
+  useEffect(() => {
+    const bootstrap = async () => {
+      const isAuthenticated = sessionStorage.getItem('isAuthenticated') === 'true';
+      if (!isAuthenticated) {
+        setIsBootstrapping(false);
+        return;
+      }
+
+      try {
+        const { data } = await axiosInstance.post('/api/login/refresh');
+        setAccessToken(data.token);
+      } catch {
+        // Refresh cookie expired or invalid — clear session
+        sessionStorage.clear();
+      } finally {
+        setIsBootstrapping(false);
+      }
+    };
+
+    bootstrap();
+  }, []);
+
+  if (isBootstrapping) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
   return (
     <BrowserRouter>
       <Routes>
@@ -45,3 +80,4 @@ function App() {
 }
 
 export default App;
+
