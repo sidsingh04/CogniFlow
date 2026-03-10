@@ -108,6 +108,23 @@ async function updateTicket(req, res) {
                 updateObj.$push = { rejectionHistory: new Date(rejectedDate) };
             }
 
+            // If moving from pending to approval, track it in the new history array
+            if (previousStatus === 'pending' && updateFields.status === 'approval') {
+                updateObj.$push = updateObj.$push || {};
+                updateObj.$push.approvalHistory = {
+                    date: new Date(updateFields.approvalDate || Date.now()),
+                    callDuration: updateFields.callDuration || 0,
+                    remarks: updateFields.remarks || ''
+                };
+
+                // Accumulate the callDuration instead of overwriting it
+                if (updateFields.callDuration !== undefined) {
+                    delete updateObj.$set.callDuration;
+                    const parsedDuration = Number(updateFields.callDuration);
+                    updateObj.$inc = { callDuration: isNaN(parsedDuration) ? 0 : parsedDuration };
+                }
+            }
+
             const ticket =
                 await Ticket.findOneAndUpdate(
                     {
@@ -173,13 +190,13 @@ async function updateTicket(req, res) {
                 { agentId: ticket.agentId },
                 {
                     $set: {
-                        totalPending: stats.totalPending,
-                        pendingApprovals: stats.pendingApprovals,
-                        totalResolved: stats.totalResolved,
-                        successfulCalls: stats.successfulCalls,
-                        failedCalls: stats.failedCalls,
-                        totalCallDuration: stats.totalCallDuration,
-                        status: stats.totalPending > 0 ? "Busy" : "Available"
+                        totalPending: Number(stats.totalPending) || 0,
+                        pendingApprovals: Number(stats.pendingApprovals) || 0,
+                        totalResolved: Number(stats.totalResolved) || 0,
+                        successfulCalls: Number(stats.successfulCalls) || 0,
+                        failedCalls: Number(stats.failedCalls) || 0,
+                        totalCallDuration: Number(stats.totalCallDuration) || 0,
+                        status: (Number(stats.totalPending) || 0) > 0 ? "Busy" : "Available"
                     }
                 },
                 { session }
@@ -440,6 +457,128 @@ async function getFilteredTickets(req, res) {
     }
 }
 
+async function getAuditTrail(req, res) {
+    try {
+        const { issueId } = req.params;
+
+        if (!issueId) {
+            return res.status(400).json({ success: false, message: "issueId parameter is required" });
+        }
+
+        const ticket = await Ticket.findOne({ issueId });
+        if (!ticket) {
+            return res.status(404).json({ success: false, message: "Ticket not found" });
+        }
+
+        // We need to fetch attachments for this ticket.
+        const Attachment = require("../models/Attachment");
+        const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+        const { GetObjectCommand } = require("@aws-sdk/client-s3");
+        const { s3 } = require("../config/s3");
+
+        const attachments = await Attachment.find({ ticket: ticket._id }).sort({ createdAt: 1 });
+
+        // Let's build the timeline events
+        let events = [];
+
+        // 1. Creation event
+        events.push({
+            type: 'CREATED',
+            timestamp: new Date(ticket.issueDate),
+            message: `Ticket created and assigned to agent ${ticket.agentId}`,
+            agentId: ticket.agentId
+        });
+
+        // 2. Approval Requests (from approvalHistory array or fallback to approvalDate)
+        const approvalHistoryList = ticket.approvalHistory && ticket.approvalHistory.length > 0
+            ? ticket.approvalHistory
+            : (ticket.approvalDate ? [ticket.approvalDate] : []);
+
+        approvalHistoryList.forEach(approval => {
+            const isObj = typeof approval === 'object' && approval.date !== undefined;
+            const date = isObj ? approval.date : approval;
+
+            events.push({
+                type: 'APPROVAL_REQUEST',
+                timestamp: new Date(date),
+                message: 'Sent for supervisor approval',
+                remarks: isObj && approval.remarks ? approval.remarks : ticket.remarks,
+                callDuration: isObj && approval.callDuration !== undefined ? approval.callDuration : undefined
+            });
+        });
+
+        // 3. Rejections
+        if (ticket.rejectionHistory && ticket.rejectionHistory.length > 0) {
+            ticket.rejectionHistory.forEach(date => {
+                events.push({
+                    type: 'REJECTED',
+                    timestamp: new Date(date),
+                    message: 'Approval rejected by supervisor'
+                });
+            });
+        }
+
+        // 4. Resolution
+        if (ticket.status === 'resolved' && ticket.resolvedDate) {
+
+            // Dynamically calculate the total duration from the approval history to be perfectly flawless
+            let computedTotalDuration = 0;
+            if (ticket.approvalHistory && ticket.approvalHistory.length > 0) {
+                ticket.approvalHistory.forEach(approval => {
+                    if (typeof approval === 'object' && typeof approval.callDuration === 'number') {
+                        computedTotalDuration += approval.callDuration;
+                    }
+                });
+            }
+
+            // Fallback to the root ticket field for older tickets
+            const finalDuration = computedTotalDuration > 0 ? computedTotalDuration : (ticket.callDuration || 0);
+
+            events.push({
+                type: 'RESOLVED',
+                timestamp: new Date(ticket.resolvedDate),
+                message: 'Ticket approved and marked as resolved',
+                callDuration: finalDuration
+            });
+        }
+
+        // Now process attachments and interleave them as distinct events OR attach them to the nearest approval request
+        // Let's add them as distinct attachment events for precision
+        for (const att of attachments) {
+            try {
+                const command = new GetObjectCommand({
+                    Bucket: process.env.AWS_BUCKET_NAME,
+                    Key: att.fileKey
+                });
+                const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+
+                events.push({
+                    type: 'ATTACHMENT',
+                    timestamp: new Date(att.createdAt),
+                    message: `Agent uploaded an ${att.fileType.startsWith('image') ? 'image' : 'audio'} attachment`,
+                    mediaUrl: url,
+                    fileType: att.fileType
+                });
+            } catch (err) {
+                console.error(`Failed to generate signed url for attachment ${att._id}`, err);
+            }
+        }
+
+        // Sort all events chronologically (oldest first)
+        events.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+        return res.json({
+            success: true,
+            ticketId: ticket.issueId,
+            events
+        });
+
+    } catch (error) {
+        console.error("Error generating audit trail:", error);
+        return res.status(500).json({ success: false, message: "Internal server error generating audit trail" });
+    }
+}
+
 module.exports = {
     createTicket,
     getTicketById,
@@ -448,5 +587,6 @@ module.exports = {
     getTicketsByAgentId,
     getAllTickets,
     getPaginatedHistory,
-    getFilteredTickets
+    getFilteredTickets,
+    getAuditTrail
 };

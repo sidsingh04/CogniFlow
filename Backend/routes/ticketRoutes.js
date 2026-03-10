@@ -11,5 +11,6 @@ router.get("/get-by-agentId", ticketController.getTicketsByAgentId);
 router.get("/get-all", ticketController.getAllTickets);
 router.get("/get-paginated-history", ticketController.getPaginatedHistory)
 router.get("/get-filtered", ticketController.getFilteredTickets)
+router.get("/audit-trail/:issueId", ticketController.getAuditTrail);
 
 module.exports = router;

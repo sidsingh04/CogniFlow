@@ -68,6 +68,12 @@ const ticketSchema = new mongoose.Schema({
         type: Date
     }],
 
+    approvalHistory: [{
+        date: Date,
+        callDuration: Number,
+        remarks: String
+    }],
+
     slaBreached: {
         type: Boolean,
         default: false

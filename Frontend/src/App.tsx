@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import AgentDashboard from './pages/AgentDashboard';
 import SupervisorDashboard from './pages/SupervisorDashboard';
+import SupportPage from './pages/SupportPage';
 import axiosInstance, { setAccessToken } from './utils/axiosInstance';
 import './App.css';
 
@@ -58,6 +59,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Login />} />
+        <Route path="/support" element={<SupportPage />} />
         <Route
           path="/agent"
           element={

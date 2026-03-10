@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axiosInstance from '../../utils/axiosInstance';
 import CreateTicketModal from './CreateTicketModal';
 import SupervisorTicketDetailsModal from './SupervisorTicketDetailsModal';
+import TicketAuditTrailModal from './TicketAuditTrailModal';
 import socket from '../../services/socket';
 
 interface Ticket {
@@ -46,6 +47,10 @@ export default function TicketsTab() {
     const [attachmentType, setAttachmentType] = useState<string | null>(null);
     const [isFetchingAttachment, setIsFetchingAttachment] = useState(false);
     const [attachmentError, setAttachmentError] = useState<string | null>(null);
+
+    // Audit Trail State
+    const [auditTrailOpen, setAuditTrailOpen] = useState(false);
+    const [auditTrailTicketId, setAuditTrailTicketId] = useState<string | null>(null);
 
     // Search and Sort State
     const [searchAgentId, setSearchAgentId] = useState('');
@@ -120,6 +125,12 @@ export default function TicketsTab() {
         } finally {
             setIsFetchingAttachment(false);
         }
+    };
+
+    const handleOpenAuditTrail = (e: React.MouseEvent, ticketId: string) => {
+        e.stopPropagation();
+        setAuditTrailTicketId(ticketId);
+        setAuditTrailOpen(true);
     };
 
     // Fetch tickets whenever filters or page changes
@@ -309,6 +320,7 @@ export default function TicketsTab() {
                                 <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)] whitespace-nowrap">Status</th>
                                 <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)] whitespace-nowrap">Issue Date</th>
                                 <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)] whitespace-nowrap">Resolved Date</th>
+                                <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)] text-center">Trail</th>
                                 <th className="py-3 px-5 font-semibold text-[var(--text-secondary)] text-xs tracking-wider uppercase border-b border-[var(--border-secondary)] text-right">Attachment</th>
                             </tr>
                         </thead>
@@ -337,6 +349,15 @@ export default function TicketsTab() {
                                         </td>
                                         <td className="py-2.5 px-5 text-xs text-[var(--text-secondary)] font-medium whitespace-nowrap">
                                             {t.resolvedDate ? new Date(t.resolvedDate).toLocaleString() : 'N/A'}
+                                        </td>
+                                        <td className="py-2.5 px-5 text-center">
+                                            <button
+                                                onClick={(e) => handleOpenAuditTrail(e, t.issueId)}
+                                                className="p-1.5 text-[var(--text-muted)] hover:text-blue-500 hover:bg-blue-50 rounded-md transition-colors inline-flex items-center justify-center border border-transparent hover:border-blue-200"
+                                                title="View Audit Trail"
+                                            >
+                                                ⏱️
+                                            </button>
                                         </td>
                                         <td className="py-2.5 px-5 text-right">
                                             <button
@@ -452,6 +473,13 @@ export default function TicketsTab() {
                     </div>
                 </div>
             )}
+
+            {/* Audit Trail Modal */}
+            <TicketAuditTrailModal
+                isOpen={auditTrailOpen}
+                onClose={() => setAuditTrailOpen(false)}
+                ticketId={auditTrailTicketId}
+            />
         </div>
     );
 }
