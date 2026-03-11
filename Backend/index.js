@@ -59,6 +59,9 @@ app.use("/api/ticket", authenticateJwt, ticketRoutes);
 const analyticsRoutes = require("./routes/analyticsRoutes.js");
 app.use("/api/analytics", authenticateJwt, analyticsRoutes);
 
+const knowledgeRoutes = require("./routes/knowledgeRoutes.js");
+app.use("/api/knowledge", knowledgeRoutes);
+
 const attachmentRoutes = require("./routes/attachmentRoutes");
 app.use("/api/attachments", authenticateJwt, attachmentRoutes);
 

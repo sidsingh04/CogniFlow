@@ -7,14 +7,87 @@ interface SupportChatModalProps {
 
 interface ChatMessage {
     sender: 'user' | 'ai';
-    text: string;
+    text: string | React.ReactNode;
 }
+
+const FeedbackButtons: React.FC<{ documentId: string }> = ({ documentId }) => {
+    const [voted, setVoted] = useState<boolean>(false);
+    const [statusText, setStatusText] = useState<string>('');
+    const [hoverUp, setHoverUp] = useState<boolean>(false);
+    const [hoverDown, setHoverDown] = useState<boolean>(false);
+
+    const handleVote = async (action: 'upvote' | 'downvote') => {
+        if (voted) return;
+        setVoted(true);
+        try {
+            const resp = await fetch(`http://localhost:3000/api/knowledge/feedback-kb/${documentId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action })
+            });
+            if (resp.ok) {
+                setStatusText('Thanks for the feedback!');
+            } else {
+                setStatusText('Feedback failed.');
+                setVoted(false);
+            }
+        } catch (e) {
+            console.error(e);
+            setStatusText('Network error.');
+            setVoted(false);
+        }
+    };
+
+    return (
+        <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '12px' }}>
+            <span style={{ color: '#555' }}>Was this helpful?</span>
+            <button
+                onClick={() => handleVote('upvote')}
+                disabled={voted}
+                onMouseEnter={() => setHoverUp(true)}
+                onMouseLeave={() => setHoverUp(false)}
+                style={{
+                    background: hoverUp && !voted ? '#e6ffe6' : 'transparent',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    cursor: voted ? 'not-allowed' : 'pointer',
+                    padding: '2px 6px',
+                    opacity: voted ? 0.5 : 1,
+                    transition: 'background-color 0.2s'
+                }}
+            >👍</button>
+            <button
+                onClick={() => handleVote('downvote')}
+                disabled={voted}
+                onMouseEnter={() => setHoverDown(true)}
+                onMouseLeave={() => setHoverDown(false)}
+                style={{
+                    background: hoverDown && !voted ? '#ffe6e6' : 'transparent',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    cursor: voted ? 'not-allowed' : 'pointer',
+                    padding: '2px 6px',
+                    opacity: voted ? 0.5 : 1,
+                    transition: 'background-color 0.2s'
+                }}
+            >👎</button>
+            {statusText && <span style={{ color: '#28a745', fontStyle: 'italic', marginLeft: 'auto' }}>{statusText}</span>}
+        </div>
+    );
+};
+
+const getConfidenceColor = (score: number) => {
+    if (score > 0.75) return '#006400'; // Dark green
+    if (score >= 0.60) return '#4caf50'; // Light green
+    return '#9acd32'; // Yellow green
+};
 
 const SupportChatModal: React.FC<SupportChatModalProps> = ({ isOpen, onClose }) => {
     const [messages, setMessages] = useState<ChatMessage[]>([
         { sender: 'ai', text: 'Hello! I am OmniSync Support AI. How can I assist you today?' }
     ]);
-    const [inputValue, setInputValue] = useState('');
+    const [title, setTitle] = useState('');
+    const [description, setDescription] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -25,24 +98,78 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({ isOpen, onClose }) 
     useEffect(() => {
         if (isOpen) {
             scrollToBottom();
+        } else {
+            // Reset chat state when closed
+            setMessages([{ sender: 'ai', text: 'Hello! I am OmniSync Support AI. How can I assist you today?' }]);
+            setTitle('');
+            setDescription('');
         }
     }, [messages, isOpen]);
 
     const handleSendMessage = async () => {
-        if (!inputValue.trim()) return;
+        if (!title.trim() || !description.trim()) return;
 
-        const newUserMsg: ChatMessage = { sender: 'user', text: inputValue };
+        const formattedMessage = `Title: ${title}\nDescription: ${description}`;
+        const newUserMsg: ChatMessage = { sender: 'user', text: formattedMessage };
         setMessages((prev) => [...prev, newUserMsg]);
-        setInputValue('');
+        setTitle('');
+        setDescription('');
         setIsLoading(true);
 
-        // TODO: Replace with actual backend logic
         try {
-            // Simulate a short network delay
-            await new Promise((resolve) => setTimeout(resolve, 1000));
+            const response = await fetch('http://localhost:3000/api/knowledge/search-kb', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, description })
+            });
+            const data = await response.json();
 
-            const aiResponseMsg: ChatMessage = { sender: 'ai', text: 'Thanks for reaching out! We are currently working on connecting me to the brain. Please check back later.' };
-            setMessages((prev) => [...prev, aiResponseMsg]);
+            if (response.ok) {
+                let responseContent: React.ReactNode;
+
+                if (data.solutions && data.solutions.length > 0) {
+                    const topScore = data.solutions[0].confidenceScore;
+                    const introText = topScore > 0.75
+                        ? "Thanks for reaching out! We found some solutions that might help you:"
+                        : "These are the articles that might help you:";
+
+                    responseContent = (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div>{introText}</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {data.solutions.map((sol: any, i: number) => (
+                                    <div key={i} style={{
+                                        backgroundColor: 'white',
+                                        padding: '12px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #ccc',
+                                        fontSize: '13px'
+                                    }}>
+                                        <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#0055a4' }}>
+                                            {sol.title} <span style={{ fontSize: '11px', color: getConfidenceColor(sol.confidenceScore), fontWeight: 'bold' }}>({Math.round(sol.confidenceScore * 100)}% match)</span>
+                                        </div>
+                                        <div style={{ color: '#333' }}>{sol.solution}</div>
+                                        <FeedbackButtons documentId={sol._id} />
+                                    </div>
+                                ))}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#666', fontStyle: 'italic', marginTop: '4px' }}>
+                                If the issue is still not resolved then this is our helpline number for the support-team: 1-800-OMNISYNC
+                            </div>
+                        </div>
+                    );
+                } else {
+                    responseContent = `Sorry we cannot find a solution for your issue in our knowledge base and here is our contact number for the support-team: 1-800-OMNISYNC`;
+                }
+
+                const aiResponseMsg: ChatMessage = {
+                    sender: 'ai',
+                    text: responseContent
+                };
+                setMessages((prev) => [...prev, aiResponseMsg]);
+            } else {
+                throw new Error(data.message || 'Failed to submit query');
+            }
         } catch (error) {
             console.error('Error sending message:', error);
             setMessages((prev) => [...prev, { sender: 'ai', text: 'Sorry, I encountered an error. Please try again later.' }]);
@@ -59,7 +186,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({ isOpen, onClose }) 
                 position: 'fixed',
                 bottom: '90px',
                 right: '24px',
-                width: '350px',
+                width: '450px',
                 height: '500px',
                 backgroundColor: '#ffffff',
                 borderRadius: '12px',
@@ -129,6 +256,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({ isOpen, onClose }) 
                             maxWidth: '80%',
                             fontSize: '14px',
                             lineHeight: '1.4',
+                            whiteSpace: 'pre-wrap',
                         }}
                     >
                         {msg.text}
@@ -149,41 +277,54 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({ isOpen, onClose }) 
                     backgroundColor: '#ffffff',
                     borderTop: '1px solid #e0e0e0',
                     display: 'flex',
+                    flexDirection: 'column',
                     gap: '8px',
                 }}
             >
                 <input
                     type="text"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onKeyPress={(e) => {
-                        if (e.key === 'Enter') handleSendMessage();
-                    }}
-                    placeholder="Type your message..."
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Query Title..."
                     style={{
-                        flex: 1,
                         padding: '10px 14px',
                         border: '1px solid #ccc',
-                        borderRadius: '24px',
+                        borderRadius: '8px',
                         outline: 'none',
                         fontSize: '14px',
                     }}
                 />
+                <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Query Description..."
+                    rows={3}
+                    style={{
+                        padding: '10px 14px',
+                        border: '1px solid #ccc',
+                        borderRadius: '8px',
+                        outline: 'none',
+                        fontSize: '14px',
+                        resize: 'none',
+                    }}
+                />
                 <button
                     onClick={handleSendMessage}
-                    disabled={isLoading || !inputValue.trim()}
+                    disabled={isLoading || !title.trim() || !description.trim()}
                     style={{
-                        backgroundColor: inputValue.trim() && !isLoading ? '#007bff' : '#6c757d',
+                        backgroundColor: (title.trim() && description.trim() && !isLoading) ? '#007bff' : '#6c757d',
                         color: 'white',
                         border: 'none',
-                        borderRadius: '24px',
-                        padding: '0 16px',
-                        cursor: inputValue.trim() && !isLoading ? 'pointer' : 'not-allowed',
+                        borderRadius: '8px',
+                        padding: '10px 16px',
+                        cursor: (title.trim() && description.trim() && !isLoading) ? 'pointer' : 'not-allowed',
                         fontWeight: 'bold',
                         transition: 'background-color 0.2s',
+                        alignSelf: 'flex-end',
+                        marginTop: '4px'
                     }}
                 >
-                    Send
+                    Submit Query
                 </button>
             </div>
         </div>
