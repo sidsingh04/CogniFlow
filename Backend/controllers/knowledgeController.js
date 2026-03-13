@@ -1,10 +1,29 @@
 const KnowledgeBase = require("../models/KnowledgeBase");
+const Ticket = require("../models/Tickets");
+const Tag = require("../models/Tags");
+const mongoose = require("mongoose");
 const { NlpManager } = require("node-nlp");
 const { isSimilar } = require("../services/tagging");
 const { calculateConfidence } = require("../services/confidence");
+const { processAndInsertTags } = require("./tagController");
 
 // Initialize NLP manager for English
 const manager = new NlpManager({ languages: ['en'], forceNER: true });
+
+// Jaccard similarity helper = |intersection| / |union|
+function jaccardSimilarity(setA, setB) {
+    if (!setA || !setB) return 0;
+    const a = new Set(setA.map(t => t.toLowerCase()));
+    const b = new Set(setB.map(t => t.toLowerCase()));
+    if (a.size === 0 && b.size === 0) return 1; // both empty = perfect match
+    if (a.size === 0 || b.size === 0) return 0;
+    let intersection = 0;
+    for (const item of a) {
+        if (b.has(item)) intersection++;
+    }
+    const union = new Set([...a, ...b]).size;
+    return intersection / union;
+}
 
 exports.createKnowledgeBase = async (req, res) => {
     try {
@@ -17,7 +36,7 @@ exports.createKnowledgeBase = async (req, res) => {
         const newKB = new KnowledgeBase({
             title,
             description,
-            solution: solution || "Pending AI/Agent Response", // Default placeholder
+            solution: solution ? [solution] : ["Pending AI/Agent Response"], // Array initialization
             tags: tags || []
         });
 
@@ -138,14 +157,14 @@ exports.searchKnowledgeBase = async (req, res) => {
                                 text: {
                                     query: searchQuery,
                                     path: "title",
-                                    score: { boost: { value: 3 } } // Highest Priority
+                                    score: { boost: { value: 3 } } // Secondary Priority
                                 }
                             },
                             {
                                 text: {
                                     query: searchQuery,
                                     path: "tags",
-                                    score: { boost: { value: 2 } } // Secondary Priority
+                                    score: { boost: { value: 4 } } // Highest Priority
                                 }
                             },
                             {
@@ -165,6 +184,14 @@ exports.searchKnowledgeBase = async (req, res) => {
                 }
             },
             {
+                // Project search score into a real field so we can filter on it
+                $addFields: { score: { $meta: "searchScore" } }
+            },
+            {
+                // Gate 1: Only keep documents with relevance score >= 6
+                $match: { score: { $gte: 6 } }
+            },
+            {
                 $limit: 50
             },
             {
@@ -176,18 +203,22 @@ exports.searchKnowledgeBase = async (req, res) => {
                     usageCount: 1,
                     successCount: 1,
                     updatedAt: 1,
-                    score: { $meta: "searchScore" }
+                    score: 1
                 }
             }
         ]);
 
+        const filteredSolutions = tags.length > 0
+            ? topSolutions.filter(doc => jaccardSimilarity(tags, doc.tags || []) >= 0.3)
+            : topSolutions; // If no user tags were extracted, skip Jaccard filter
+
         let finalSolutions = [];
 
-        if (topSolutions && topSolutions.length > 0) {
-            const maxRelevanceScore = topSolutions[0].score || 1; // Prevent division by zero
+        if (filteredSolutions && filteredSolutions.length > 0) {
+            const maxRelevanceScore = filteredSolutions[0].score || 1; // Prevent division by zero
 
             // Calculate confidence score for each document
-            const scoredSolutions = topSolutions.map(doc => {
+            const scoredSolutions = filteredSolutions.map(doc => {
                 const normalizedRelevance = doc.score / maxRelevanceScore;
                 const confidenceScore = calculateConfidence(normalizedRelevance, doc);
                 return {
@@ -252,6 +283,148 @@ exports.updateKnowledgeBase = async (req, res) => {
 exports.deleteKnowledgeBase = async (req, res) => {
     // Placeholder functionality, not fully implemented for this workflow
     res.status(200).json({ message: "Delete KB endpoint" });
+};
+
+// It directly write, It would later go through the pipeline and
+// then the decision be made how to handle knowledge-base
+// and tags collection.
+
+exports.submitClosingReview = async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        const { issueId, title, description, solution, tags } = req.body;
+
+        if (!issueId || !title || !description || !solution) {
+            return res.status(400).json({ message: "issueId, title, description, and solution are required" });
+        }
+
+        const providedTags = Array.isArray(tags) ? tags : [];
+
+        // 1. Process tags through insertion pipeline
+        const resolvedTags = await processAndInsertTags(providedTags, session);
+
+        // 2. Smart KB Integration Check via Atlas Search
+        let kbActionTaken = "INSERT";
+        let targetKB = null;
+
+        // Build search query using the original attributes and resolved tags
+        const searchQuery = `${title} ${description} ${resolvedTags.join(' ')}`.trim();
+
+        // Perform Atlas Search using Field Boosting (Same as searchKnowledgeBase)
+        const topSolutions = await KnowledgeBase.aggregate([
+            {
+                $search: {
+                    index: "knowledgebase_search",
+                    compound: {
+                        should: [
+                            {
+                                text: {
+                                    query: searchQuery,
+                                    path: "title",
+                                    score: { boost: { value: 3 } }
+                                }
+                            },
+                            {
+                                text: {
+                                    query: searchQuery,
+                                    path: "tags",
+                                    score: { boost: { value: 4 } }
+                                }
+                            },
+                            {
+                                text: {
+                                    query: searchQuery,
+                                    path: "description",
+                                    score: { boost: { value: 1 } }
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                $addFields: { score: { $meta: "searchScore" } }
+            },
+            {
+                // Gate 1: Relevance must be >= 5
+                $match: { score: { $gte: 5 } }
+            },
+            {
+                $limit: 1 // We only need the top absolute match to make a decision
+            }
+        ]); // Removed .session(session) because $search cannot run in a transaction
+
+        if (topSolutions && topSolutions.length > 0) {
+            const topDoc = topSolutions[0];
+
+            // Normalize Top Document's score by dividing by a heuristic max threshold (e.g. max theoretical expected ~ 25.0) 
+            // NOTE: The user explicitly requested >0.85 and [0.55, 0.85] logic natively. Maxing to 25 to approximate 0-1 bounds for search score.
+            // Adjust the denominator according to typical Atlas Search score magnitude bounds in your dataset.
+            const MAX_EXPECTED_SCORE = 20.0;
+            const normalizedScore = Math.min(topDoc.score / MAX_EXPECTED_SCORE, 1.0);
+
+            const overlap = jaccardSimilarity(resolvedTags, topDoc.tags || []);
+
+            if (normalizedScore > 0.85 && overlap >= 0.4) {
+                // Highly confident match. Ignore KB insertion/append.
+                kbActionTaken = "IGNORE";
+                targetKB = topDoc;
+            } else if (normalizedScore >= 0.55 && normalizedScore <= 0.85 && overlap >= 0.25 && overlap <= 0.4) {
+                // Moderate confidence match. Append the new solution context gracefully.
+                kbActionTaken = "APPEND";
+
+                const combinedTags = [...new Set([...(topDoc.tags || []), ...resolvedTags])];
+
+                targetKB = await KnowledgeBase.findByIdAndUpdate(
+                    topDoc._id,
+                    {
+                        $push: { solution: solution }, // Push the new solution string to the array
+                        $set: { tags: combinedTags }
+                    },
+                    { new: true, session }
+                );
+            }
+        }
+
+        // 3. Fallback: Create new entry if no suitable match found
+        if (kbActionTaken === "INSERT") {
+            const newKB = new KnowledgeBase({
+                title,
+                description,
+                solution: [solution], // Wrap in array
+                tags: resolvedTags
+            });
+            await newKB.save({ session });
+            targetKB = newKB;
+        }
+
+        // 4. Update the ticket's reviewGiven flag
+        const updatedTicket = await Ticket.findOneAndUpdate(
+            { issueId },
+            { $set: { reviewGiven: true } },
+            { new: true, session }
+        );
+
+        if (!updatedTicket) {
+            throw new Error(`Ticket with issueId ${issueId} not found`);
+        }
+
+        await session.commitTransaction();
+        session.endSession();
+
+        res.status(201).json({
+            message: `Review submitted. KB Action: ${kbActionTaken}`,
+            kb: targetKB,
+            ticket: updatedTicket
+        });
+    } catch (error) {
+        await session.abortTransaction();
+        session.endSession();
+        console.error("Error submitting closing review:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
 };
 
 // Handle Upvote / Downvote Feedback on Search Solutions

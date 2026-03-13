@@ -8,7 +8,7 @@ const { scheduleSLACheck, scheduleSLAWarning, cancelSLASchedules } = require("./
 
 async function createTicket(req, res) {
     try {
-        const { issueId, code, description, agentId, status, issueDate } = req.body;
+        const { issueId, code, title, description, agentId, status, issueDate } = req.body;
 
         // Find the agent to get their ObjectId
         const agent = await Agent.findOne({ agentId });
@@ -19,6 +19,7 @@ async function createTicket(req, res) {
         const ticket = new Ticket({
             issueId,
             code,
+            title,
             description,
             agentId,
             agent: agent._id,

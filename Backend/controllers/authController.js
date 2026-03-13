@@ -26,7 +26,9 @@ function generateAccessToken(payload) {
 }
 
 function generateRefreshToken(payload) {
-    return jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: '7d' });
+    // Add a unique JWT ID to payload so concurrent requests in the same second produce distinct tokens
+    const uniquePayload = { ...payload, jti: crypto.randomBytes(16).toString('hex') };
+    return jwt.sign(uniquePayload, JWT_REFRESH_SECRET, { expiresIn: '7d' });
 }
 
 async function saveRefreshToken(token, userId, role) {

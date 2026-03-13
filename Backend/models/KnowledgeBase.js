@@ -12,7 +12,7 @@ const knowledgeBaseSchema = new mongoose.Schema({
         trim: true
     },
     solution: {
-        type: String,
+        type: [String],
         required: true,
         trim: true
     },

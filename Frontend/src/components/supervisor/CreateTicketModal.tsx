@@ -9,6 +9,7 @@ interface CreateTicketModalProps {
 
 export default function CreateTicketModal({ isOpen, onClose, onSuccess }: CreateTicketModalProps) {
     const [typeIssue, setTypeIssue] = useState('');
+    const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [agentSearch, setAgentSearch] = useState('');
     const [selectedAgentId, setSelectedAgentId] = useState('');
@@ -62,7 +63,7 @@ export default function CreateTicketModal({ isOpen, onClose, onSuccess }: Create
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!typeIssue || !description || !selectedAgentId) {
+        if (!typeIssue || !title || !description || !selectedAgentId) {
             alert('Please fill all required fields and select an agent.');
             return;
         }
@@ -75,6 +76,7 @@ export default function CreateTicketModal({ isOpen, onClose, onSuccess }: Create
             const ticketData = {
                 issueId: ticketId,
                 code: typeIssue,
+                title: title,
                 description: description,
                 callDuration: null,
                 agentId: selectedAgentId,
@@ -97,6 +99,7 @@ export default function CreateTicketModal({ isOpen, onClose, onSuccess }: Create
 
             // Reset form and close
             setTypeIssue('');
+            setTitle('');
             setDescription('');
             setAgentSearch('');
             setSelectedAgentId('');
@@ -148,6 +151,18 @@ export default function CreateTicketModal({ isOpen, onClose, onSuccess }: Create
                             <option value="service">Service Issue</option>
                             <option value="other">Other</option>
                         </select>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                        <label className="text-sm font-semibold text-[var(--text-secondary)]">Title <span className="text-red-500">*</span></label>
+                        <input
+                            type="text"
+                            value={title}
+                            onChange={e => setTitle(e.target.value)}
+                            required
+                            placeholder="Enter a brief title for the ticket..."
+                            className="p-3 border border-[var(--border-primary)] rounded-lg bg-[var(--bg-primary)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary)]/20 transition-all font-medium"
+                        />
                     </div>
 
                     <div className="flex flex-col gap-1.5">

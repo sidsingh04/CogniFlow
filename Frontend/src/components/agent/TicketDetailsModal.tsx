@@ -177,6 +177,15 @@ export default function TicketDetailsModal({ isOpen, onClose, ticket, agent, onT
                         )}
                     </div>
 
+                    {ticket.title && (
+                        <div className="flex flex-col gap-2">
+                            <span className="text-sm font-semibold text-[var(--text-primary)]">Title:</span>
+                            <p className="bg-[var(--bg-tertiary)] p-4 rounded-md font-semibold leading-relaxed m-0 border border-[var(--border-secondary)] text-[var(--text-primary)] text-[0.95rem]">
+                                {ticket.title}
+                            </p>
+                        </div>
+                    )}
+
                     <div className="flex flex-col gap-2">
                         <span className="text-sm font-semibold text-[var(--text-primary)]">Description:</span>
                         <p className="bg-[var(--bg-tertiary)] p-4 rounded-md font-normal leading-relaxed m-0 border border-[var(--border-secondary)] text-[var(--text-primary)] whitespace-pre-wrap text-[0.95rem]">

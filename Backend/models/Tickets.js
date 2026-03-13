@@ -14,6 +14,12 @@ const ticketSchema = new mongoose.Schema({
         trim: true
     },
 
+    title: {
+        type: String,
+        trim: true,
+        required: true
+    },
+
     description: {
         type: String,
         required: true,
@@ -75,6 +81,12 @@ const ticketSchema = new mongoose.Schema({
     }],
 
     slaBreached: {
+        type: Boolean,
+        default: false
+    },
+
+    //for closing review given by agent.
+    reviewGiven: {
         type: Boolean,
         default: false
     },

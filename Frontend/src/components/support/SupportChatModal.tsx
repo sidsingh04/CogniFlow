@@ -148,7 +148,17 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({ isOpen, onClose }) 
                                         <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#0055a4' }}>
                                             {sol.title} <span style={{ fontSize: '11px', color: getConfidenceColor(sol.confidenceScore), fontWeight: 'bold' }}>({Math.round(sol.confidenceScore * 100)}% match)</span>
                                         </div>
-                                        <div style={{ color: '#333' }}>{sol.solution}</div>
+                                        <div style={{ color: '#333', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                                            {Array.isArray(sol.solution) ? sol.solution.map((text: string, idx: number) => (
+                                                <div key={idx} style={{ padding: '8px', backgroundColor: '#f9f9f9', borderRadius: '4px', borderLeft: '3px solid #0055a4' }}>
+                                                    {text}
+                                                </div>
+                                            )) : (
+                                                <div style={{ padding: '8px', backgroundColor: '#f9f9f9', borderRadius: '4px', borderLeft: '3px solid #0055a4' }}>
+                                                    {sol.solution}
+                                                </div>
+                                            )}
+                                        </div>
                                         <FeedbackButtons documentId={sol._id} />
                                     </div>
                                 ))}

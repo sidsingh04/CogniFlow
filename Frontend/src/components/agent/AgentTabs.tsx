@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axiosInstance, { setAccessToken } from '../../utils/axiosInstance';
+import KBSuggestionsModal from './KBSuggestionsModal';
+import ClosingReviewModal from './ClosingReviewModal';
 
 interface AgentTabsProps {
     agent: any;
@@ -12,6 +14,8 @@ interface AgentTabsProps {
 export default function AgentTabs({ agent, tickets, onTicketClick, historyRefreshId }: AgentTabsProps) {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<'pending' | 'activity'>('pending');
+    const [kbTicket, setKbTicket] = useState<any>(null);
+    const [reviewTicket, setReviewTicket] = useState<any>(null);
 
     // Pending Tickets search (client-side)
     const [searchQuery, setSearchQuery] = useState('');
@@ -132,12 +136,38 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
                 <div className="flex justify-between text-[0.85rem] text-gray-500 mt-2">
                     <span>{new Date(ticket.issueDate).toLocaleDateString()}</span>
                     {isPending && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); onTicketClick(ticket); }}
-                            className="px-3 py-1 bg-transparent border border-[var(--accent-primary)] text-[var(--accent-primary)] rounded-md text-[0.85rem] cursor-pointer transition-colors hover:bg-[var(--accent-primary)] hover:text-[var(--text-primary)]"
-                        >
-                            View Details
-                        </button>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setKbTicket(ticket); }}
+                                className="px-3 py-1 bg-transparent border border-indigo-400 text-indigo-500 rounded-md text-[0.85rem] cursor-pointer transition-colors hover:bg-indigo-500 hover:text-white flex items-center gap-1"
+                                title="Knowledge Base Suggestions"
+                            >
+                                📚 KB
+                            </button>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onTicketClick(ticket); }}
+                                className="px-3 py-1 bg-transparent border border-[var(--accent-primary)] text-[var(--accent-primary)] rounded-md text-[0.85rem] cursor-pointer transition-colors hover:bg-[var(--accent-primary)] hover:text-[var(--text-primary)]"
+                            >
+                                View Details
+                            </button>
+                        </div>
+                    )}
+                    {type === 'history' && ticket.status === 'resolved' && !ticket.reviewGiven && (
+                        <div className="flex gap-2">
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setReviewTicket(ticket); }}
+                                className="px-3 py-1 bg-transparent border border-emerald-500 text-emerald-600 rounded-md text-[0.85rem] cursor-pointer transition-colors hover:bg-emerald-500 hover:text-white flex items-center gap-1 font-medium"
+                                title="Write a closing review to save as a KB article"
+                            >
+                                ✍️ Write Review
+                            </button>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onTicketClick(ticket); }}
+                                className="px-3 py-1 bg-transparent border border-[var(--accent-primary)] text-[var(--accent-primary)] rounded-md text-[0.85rem] cursor-pointer transition-colors hover:bg-[var(--accent-primary)] hover:text-[var(--text-primary)]"
+                            >
+                                View Details
+                            </button>
+                        </div>
                     )}
                 </div>
             </div>
@@ -305,6 +335,25 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
                 )}
             </div>
 
+            {/* KB Suggestions Modal */}
+            <KBSuggestionsModal
+                isOpen={!!kbTicket}
+                onClose={() => setKbTicket(null)}
+                ticket={kbTicket}
+            />
+
+            {/* Closing Review Modal */}
+            <ClosingReviewModal
+                isOpen={!!reviewTicket}
+                onClose={() => setReviewTicket(null)}
+                ticket={reviewTicket}
+                onSuccess={() => {
+                    // Update paginated state locally so the button disappears instantly
+                    setPaginatedHistory(prev => prev.map(t => 
+                        t.issueId === reviewTicket.issueId ? { ...t, reviewGiven: true } : t
+                    ));
+                }}
+            />
         </div>
     );
 }

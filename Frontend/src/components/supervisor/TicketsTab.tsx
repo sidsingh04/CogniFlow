@@ -8,6 +8,7 @@ import socket from '../../services/socket';
 interface Ticket {
     issueId: string;
     code: string;
+    title?: string;
     description: string;
     status: string;
     agentId: string;

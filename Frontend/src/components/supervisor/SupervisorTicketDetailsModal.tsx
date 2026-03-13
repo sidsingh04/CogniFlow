@@ -115,6 +115,15 @@ export default function SupervisorTicketDetailsModal({ isOpen, onClose, ticket, 
                         )}
                     </div>
 
+                    {ticket.title && (
+                        <div className="flex flex-col gap-2">
+                            <span className="text-sm font-semibold text-[var(--text-primary)] border-b border-[var(--border-secondary)] pb-1 w-max">Title</span>
+                            <p className="bg-[var(--bg-tertiary)] p-4 rounded-md font-semibold leading-relaxed m-0 border border-[var(--border-secondary)] text-[var(--text-primary)] text-[1rem] shadow-sm">
+                                {ticket.title}
+                            </p>
+                        </div>
+                    )}
+
                     <div className="flex flex-col gap-2">
                         <span className="text-sm font-semibold text-[var(--text-primary)] border-b border-[var(--border-secondary)] pb-1 w-max">Initial Description</span>
                         <p className="bg-[var(--bg-tertiary)] p-4 rounded-md font-normal leading-relaxed m-0 border border-[var(--border-secondary)] text-[var(--text-primary)] whitespace-pre-wrap text-[0.95rem] shadow-sm">
