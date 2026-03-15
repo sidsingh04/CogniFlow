@@ -82,4 +82,8 @@ server.listen(PORT, () => {
   // Start the SLA breach/warning SQS worker in-process
   const { startSLAWorker } = require("./worker/slaWorker");
   startSLAWorker();
+
+  // Start the Tag Cleanup Cron Job
+  const { startTagCleanupCron } = require("./worker/tagCleanupCron");
+  startTagCleanupCron();
 });

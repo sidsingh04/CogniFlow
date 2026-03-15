@@ -3,28 +3,14 @@ const Ticket = require("../models/Tickets");
 const Tag = require("../models/Tags");
 const mongoose = require("mongoose");
 const { NlpManager } = require("node-nlp");
-const { isSimilar } = require("../services/tagging");
+const { isSimilar, jaccardSimilarity, } = require("../services/tagging");
 const { calculateConfidence } = require("../services/confidence");
 const { processAndInsertTags } = require("./tagController");
 
 // Initialize NLP manager for English
 const manager = new NlpManager({ languages: ['en'], forceNER: true });
 
-// Jaccard similarity helper = |intersection| / |union|
-function jaccardSimilarity(setA, setB) {
-    if (!setA || !setB) return 0;
-    const a = new Set(setA.map(t => t.toLowerCase()));
-    const b = new Set(setB.map(t => t.toLowerCase()));
-    if (a.size === 0 && b.size === 0) return 1; // both empty = perfect match
-    if (a.size === 0 || b.size === 0) return 0;
-    let intersection = 0;
-    for (const item of a) {
-        if (b.has(item)) intersection++;
-    }
-    const union = new Set([...a, ...b]).size;
-    return intersection / union;
-}
-
+/* 
 exports.createKnowledgeBase = async (req, res) => {
     try {
         const { title, description, solution, tags } = req.body;
@@ -51,6 +37,7 @@ exports.createKnowledgeBase = async (req, res) => {
         res.status(500).json({ message: "Internal server error" });
     }
 };
+*/
 
 //Customer Query Search
 exports.searchKnowledgeBase = async (req, res) => {
@@ -63,46 +50,6 @@ exports.searchKnowledgeBase = async (req, res) => {
 
         // Use node-nlp to process the description
         const result = await manager.process("en", description);
-        const TECH_TERMS = new Set([
-            // Authentication & Access
-            "login", "signin", "signup", "email", "password", "profile", "account", "auth",
-            "authentication", "authorization", "token", "session", "access",
-
-            // Generic Tech & Errors
-            "bug", "issue", "error", "crash", "crashing", "latency", "timeout", "api", "database",
-            "downtime", "network", "connection", "server", "sync", "syncing", "unhandled", "exception", "glitch", "performance",
-            "slow", "lagging", "freeze", "frozen", "update", "upgrade", "install", "uninstall",
-            "offline", "loading", "failure", "fail", "missing", "configuration", "settings", "setup",
-            "down", "buggy", "broken", "disconnect", "disconnected", "latency", "lag", "offline",
-
-            // Core Restaurant POS & Hardware
-            "pos", "kiosk", "terminal", "register", "ipad", "tablet", "printer", "printing",
-            "receipt", "receipts", "kitchen", "kds", "display", "screen", "menu", "modifier",
-            "modifiers", "inventory", "stock", "recipe", "order", "orders", "checkout", "payment",
-            "payments", "card", "reader", "swipe", "chip", "nfc", "tap", "cash", "drawer",
-            "refund", "void", "discount", "comp", "split", "bill", "check", "tip", "gratuity",
-            "table", "floorplan", "seating", "reservation", "reservations", "waitlist",
-            "delivery", "takeout", "pickup", "online", "integration", "doordash", "ubereats",
-            "grubhub", "third-party", "loyalty", "rewards", "giftcard", "giftcards", "promo",
-            "code", "clock", "timesheet", "shift", "shifts", "payroll", "manager", "override",
-            "pin", "passcode", "swipe", "scanner", "barcode", "qr", "menu", "sync",
-
-            // Cloud, SaaS, Platform & Architecture
-            "cloud", "saas", "platform", "suite", "unified", "scalable", "scalability", "efficiency",
-            "aws", "hosting", "azure", "tenant", "multitenant", "deployment", "infrastructure",
-            "uptime", "sla", "migration", "onboarding",
-
-            // Business & Formats
-            "qsr", "fsr", "finedining", "fine-dining", "cloudkitchen", "cloud-kitchen", "ghostkitchen",
-            "ghost-kitchen", "darkkitchen", "hotel", "chain", "chains", "franchise", "enterprise",
-            "smb", "bms", "cafe", "bakery", "bar", "brewery", "foodtruck",
-
-            // Specialized Modules (FOH, BOH, Analytics, CRM)
-            "foh", "front-of-house", "boh", "back-of-house", "analytics", "reporting", "reports",
-            "dashboard", "metrics", "crm", "customer", "guests", "feedback", "digital", "ordering",
-            "omnichannel", "marketing", "campaign", "campaigns", "sms", "push", "notification"
-        ]);
-
         let tags = [];
 
         // 1. Keep meaningful built-in NLP entities like emails and URLs
@@ -114,33 +61,37 @@ exports.searchKnowledgeBase = async (req, res) => {
             });
         }
 
-        // 2. Extract strict technical keywords
-        const words = description.split(/\s+/);
-        for (let word of words) {
-            let cleanWord = word.replace(/^[.,;:!?()]+|[.,;:!?()]+$/g, '');
-            let lowerWord = cleanWord.toLowerCase();
+        // 2. Tokenize text to find other potential tags
+        const words = description.split(/\s+/)
+            .map(w => w.replace(/^[.,;:!?()]+|[.,;:!?()]+$/g, '').toLowerCase())
+            .filter(Boolean);
 
-            if (!lowerWord) continue;
+        if (words.length > 0) {
+            // Fetch matching tags from database (canonical or aliases)
+            const matchedTagsDocs = await Tag.find({
+                $or: [
+                    { canonicalTag: { $in: words } },
+                    { aliases: { $in: words } }
+                ]
+            });
 
-            let matchedTerm = null;
+            const resolvedTags = new Set();
 
-            // 1. Fast O(1) verify for perfectly spelled words
-            if (TECH_TERMS.has(lowerWord)) {
-                matchedTerm = lowerWord;
-            } else {
-                // 2. Fallback O(N) fuzzy scan for typographical errors
-                for (const term of TECH_TERMS) {
-                    if (isSimilar(lowerWord, term)) {
-                        matchedTerm = term;
-                        break;
-                    }
+            // Add DB-matched canonical tags
+            words.forEach(word => {
+                const matchedDoc = matchedTagsDocs.find(doc =>
+                    doc.canonicalTag === word || doc.aliases.includes(word)
+                );
+
+                if (matchedDoc) {
+                    resolvedTags.add(matchedDoc.canonicalTag);
                 }
-            }
+            });
 
-            if (matchedTerm) {
-                tags.push(matchedTerm);
-            }
+            // Add DB tags to the array alongside NLP entities
+            tags = [...tags, ...Array.from(resolvedTags)];
         }
+
         tags = [...new Set(tags)].filter(Boolean);
 
         // Build search query based on user inputs and extracted tags
@@ -367,15 +318,28 @@ exports.submitClosingReview = async (req, res) => {
 
             const overlap = jaccardSimilarity(resolvedTags, topDoc.tags || []);
 
-            if (normalizedScore > 0.85 && overlap >= 0.4) {
-                // Highly confident match. Ignore KB insertion/append.
-                kbActionTaken = "IGNORE";
-                targetKB = topDoc;
-            } else if (normalizedScore >= 0.55 && normalizedScore <= 0.85 && overlap >= 0.25 && overlap <= 0.4) {
-                // Moderate confidence match. Append the new solution context gracefully.
-                kbActionTaken = "APPEND";
+            const combinedTags = [...new Set([...(topDoc.tags || []), ...resolvedTags])];
+            const tagsChanged = combinedTags.length !== (topDoc.tags || []).length;
 
-                const combinedTags = [...new Set([...(topDoc.tags || []), ...resolvedTags])];
+            if (normalizedScore > 0.85 && overlap >= 0.4) {
+                // Highly confident match overall. Ignore the text, but sync the tags.
+                kbActionTaken = "IGNORE";
+
+                if (tagsChanged) {
+                    targetKB = await KnowledgeBase.findByIdAndUpdate(
+                        topDoc._id,
+                        { $set: { tags: combinedTags } },
+                        { new: true, session }
+                    );
+                } else {
+                    targetKB = topDoc;
+                }
+            } else if (normalizedScore >= 0.55 || (normalizedScore > 0.4 && overlap >= 0.25)) {
+                // Moderate confidence match. Either the semantic text was similar enough (>0.55) 
+                // OR the text wasn't overwhelmingly strong (>0.4) but it shared a solid tag base (>=0.25).
+                // Note: There's no upper limit restricting it here. If it was score > 0.85 but 
+                // low overlap, it falls here safely instead of duplicating.
+                kbActionTaken = "APPEND";
 
                 targetKB = await KnowledgeBase.findByIdAndUpdate(
                     topDoc._id,
