@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axiosInstance, { setAccessToken } from '../../utils/axiosInstance';
 import KBSuggestionsModal from './KBSuggestionsModal';
 import ClosingReviewModal from './ClosingReviewModal';
+import PendingTicketsFilterModal from './PendingTicketsFilterModal';
+import HistoryFilterModal from './HistoryFilterModal';
 
 interface AgentTabsProps {
     agent: any;
@@ -17,19 +19,29 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
     const [kbTicket, setKbTicket] = useState<any>(null);
     const [reviewTicket, setReviewTicket] = useState<any>(null);
 
-    // Pending Tickets search (client-side)
-    const [searchQuery, setSearchQuery] = useState('');
+    // Pending Tickets search/filter state (client-side)
+    const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+    const [pendingFilters, setPendingFilters] = useState({
+        searchQuery: '',
+        startDate: '',
+        endDate: ''
+    });
 
-    // History Tickets search (server-side via regex)
-    const [historySearchQuery, setHistorySearchQuery] = useState('');
-    const [debouncedHistorySearch, setDebouncedHistorySearch] = useState('');
+
+    const [isHistoryFilterModalOpen, setIsHistoryFilterModalOpen] = useState(false);
+    const [historyFilters, setHistoryFilters] = useState({
+        issueId: '',
+        code: '',
+        status: 'All',
+        issueDate: '',
+        resolvedDate: ''
+    });
 
     // Pagination State for History
     const [historyPage, setHistoryPage] = useState(1);
     const [totalHistoryPages, setTotalHistoryPages] = useState(1);
     const [paginatedHistory, setPaginatedHistory] = useState<any[]>([]);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-    const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const handleSignOut = async () => {
         if (agent?.status === 'Break') {
@@ -55,14 +67,6 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
         }
     };
 
-    // Debounce history search
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setDebouncedHistorySearch(historySearchQuery);
-            setHistoryPage(1); // Reset page on new search
-        }, 300);
-        return () => clearTimeout(timer);
-    }, [historySearchQuery]);
 
     // Fetch Paginated History
     useEffect(() => {
@@ -76,7 +80,7 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
                         agentId: agent.agentId,
                         page: historyPage,
                         limit: 5,
-                        search: debouncedHistorySearch
+                        ...historyFilters
                     }
                 });
                 if (res.data.success) {
@@ -91,7 +95,7 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
         };
 
         fetchPaginatedHistory();
-    }, [agent?.agentId, historyPage, debouncedHistorySearch, historyRefreshId]);
+    }, [agent?.agentId, historyPage, historyFilters, historyRefreshId]);
 
     const pendingTickets = useMemo(() => {
         return tickets?.filter(t => t.status === 'pending') || [];
@@ -108,71 +112,30 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
     }, [tickets]);
 
     const filteredPending = useMemo(() => {
-        if (!searchQuery) return pendingTickets;
-        const lowerQuery = searchQuery.toLowerCase();
-        return pendingTickets.filter(
-            t => t.issueId.toLowerCase().includes(lowerQuery) || t.code?.toLowerCase().includes(lowerQuery)
-        );
-    }, [pendingTickets, searchQuery]);
+        let result = pendingTickets;
+        const { searchQuery, startDate, endDate } = pendingFilters;
+        
+        if (searchQuery) {
+            const lowerQuery = searchQuery.toLowerCase();
+            result = result.filter(
+                t => t.issueId.toLowerCase().includes(lowerQuery) || t.code?.toLowerCase().includes(lowerQuery)
+            );
+        }
 
-    const renderTicketCard = (ticket: any, type: 'pending' | 'approval' | 'history') => {
-        const isPending = type === 'pending';
-        const statusColorClass = isPending ? 'bg-blue-100 text-blue-700' :
-            (ticket.status === 'resolved' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700');
+        if (startDate) {
+            const start = new Date(startDate).setHours(0, 0, 0, 0);
+            result = result.filter(t => new Date(t.issueDate).getTime() >= start);
+        }
 
-        return (
-            <div
-                key={ticket.issueId}
-                onClick={() => onTicketClick(ticket)}
-                className="bg-[var(--bg-card)] p-4 rounded-lg border border-[var(--border-primary)] flex flex-col gap-2 cursor-pointer transition-all hover:-translate-y-0.5 hover:bg-[var(--bg-card-hover)] hover:shadow-[var(--shadow-md)]"
-            >
-                <div className="flex justify-between items-center">
-                    <span className="font-mono font-semibold text-gray-500">{ticket.issueId}</span>
-                    <span className={`text-[0.75rem] px-2.5 py-1 rounded-md uppercase font-semibold capitalize ${statusColorClass}`}>
-                        {ticket.status}
-                    </span>
-                </div>
-                <div className="font-medium text-[var(--text-primary)]">{ticket.code || 'No Subject'}</div>
-                <div className="flex justify-between text-[0.85rem] text-gray-500 mt-2">
-                    <span>{new Date(ticket.issueDate).toLocaleDateString()}</span>
-                    {isPending && (
-                        <div className="flex gap-2">
-                            <button
-                                onClick={(e) => { e.stopPropagation(); setKbTicket(ticket); }}
-                                className="px-3 py-1 bg-transparent border border-indigo-400 text-indigo-500 rounded-md text-[0.85rem] cursor-pointer transition-colors hover:bg-indigo-500 hover:text-white flex items-center gap-1"
-                                title="Knowledge Base Suggestions"
-                            >
-                                📚 KB
-                            </button>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); onTicketClick(ticket); }}
-                                className="px-3 py-1 bg-transparent border border-[var(--accent-primary)] text-[var(--accent-primary)] rounded-md text-[0.85rem] cursor-pointer transition-colors hover:bg-[var(--accent-primary)] hover:text-[var(--text-primary)]"
-                            >
-                                View Details
-                            </button>
-                        </div>
-                    )}
-                    {type === 'history' && ticket.status === 'resolved' && !ticket.reviewGiven && (
-                        <div className="flex gap-2">
-                            <button
-                                onClick={(e) => { e.stopPropagation(); setReviewTicket(ticket); }}
-                                className="px-3 py-1 bg-transparent border border-emerald-500 text-emerald-600 rounded-md text-[0.85rem] cursor-pointer transition-colors hover:bg-emerald-500 hover:text-white flex items-center gap-1 font-medium"
-                                title="Write a closing review to save as a KB article"
-                            >
-                                ✍️ Write Review
-                            </button>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); onTicketClick(ticket); }}
-                                className="px-3 py-1 bg-transparent border border-[var(--accent-primary)] text-[var(--accent-primary)] rounded-md text-[0.85rem] cursor-pointer transition-colors hover:bg-[var(--accent-primary)] hover:text-[var(--text-primary)]"
-                            >
-                                View Details
-                            </button>
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    };
+        if (endDate) {
+            const end = new Date(endDate).setHours(23, 59, 59, 999);
+            result = result.filter(t => new Date(t.issueDate).getTime() <= end);
+        }
+
+        return result;
+    }, [pendingTickets, pendingFilters]);
+
+
 
     return (
         <div className="flex-1 flex gap-6 overflow-hidden h-full">
@@ -184,7 +147,7 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
                         onClick={() => setActiveTab('pending')}
                         className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium text-sm cursor-pointer ${activeTab === 'pending'
                             ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-bold'
-                            : 'text-[var(--text-secondary)] hover:bg-gray-100 hover:text-[var(--text-primary)]'
+                            : 'text-[var(--text-secondary)] hover:bg-gray-100 hover:text-gray-900'
                             }`}
                     >
                         <span>Pending Tickets</span>
@@ -197,7 +160,7 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
                         onClick={() => setActiveTab('activity')}
                         className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all font-medium text-sm cursor-pointer ${activeTab === 'activity'
                             ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] font-bold'
-                            : 'text-[var(--text-secondary)] hover:bg-gray-100 hover:text-[var(--text-primary)]'
+                            : 'text-[var(--text-secondary)] hover:bg-gray-100 hover:text-gray-900'
                             }`}
                     >
                         <span>Activity & History</span>
@@ -223,27 +186,77 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
 
                 {activeTab === 'pending' && (
                     <div className="flex flex-col gap-4">
-                        {/* Pending search bar */}
+                        {/* Pending Toolbar with Filter Button */}
                         <div className="sticky top-0 z-10 bg-[var(--bg-primary)] pb-4 -mt-2">
-                            <div className="relative">
-                                <input
-                                    type="text"
-                                    placeholder="Search pending tickets by ID, subject"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full py-2.5 px-4 pl-10 border border-[var(--border-secondary)] rounded-lg text-[0.9rem] outline-none transition-colors focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary)]/10 bg-[var(--bg-card)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] shadow-sm"
-                                />
-                                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-[1.1rem]">
-                                    🔍
-                                </span>
+                            <div className="flex justify-between items-center bg-[var(--bg-card)] p-3 border border-[var(--border-secondary)] rounded-lg shadow-sm">
+                                <div className="text-[var(--text-secondary)] text-sm font-medium flex items-center gap-2">
+                                    <span className="bg-orange-100 text-orange-700 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">{filteredPending.length}</span>
+                                    Tickets Found
+                                    {(pendingFilters.searchQuery || pendingFilters.startDate || pendingFilters.endDate) && (
+                                        <span className="ml-2 text-xs text-indigo-500 font-semibold italic bg-indigo-50 px-2 py-0.5 rounded-full">(Filters Applied)</span>
+                                    )}
+                                </div>
+                                <button
+                                    onClick={() => setIsFilterModalOpen(true)}
+                                    className="flex items-center gap-2 px-4 py-2 bg-[var(--accent-primary)] text-white rounded-lg text-sm font-semibold shadow-sm hover:bg-indigo-600 transition-colors"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                                    </svg>
+                                    Filter Tickets
+                                </button>
                             </div>
                         </div>
 
                         {filteredPending.length > 0 ? (
-                            filteredPending.map(t => renderTicketCard(t, 'pending'))
+                            <div className="overflow-x-auto rounded-lg border border-[var(--border-secondary)] shadow-sm bg-[var(--bg-card)]">
+                                <table className="w-full text-left border-collapse table-fixed">
+                                    <thead className="bg-[var(--bg-secondary)] text-[var(--text-secondary)] text-xs uppercase tracking-wider font-semibold border-b border-[var(--border-secondary)]">
+                                        <tr>
+                                            <th className="px-4 py-3 whitespace-nowrap w-[20%]">Ticket ID</th>
+                                            <th className="px-4 py-3 whitespace-nowrap w-[20%]">Subject</th>
+                                            <th className="px-4 py-3 whitespace-nowrap w-[20%]">Issue Date</th>
+                                            <th className="px-4 py-3 whitespace-nowrap w-[20%]">Status</th>
+                                            <th className="px-4 py-3 text-right whitespace-nowrap w-[20%]">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[var(--border-secondary)]">
+                                        {filteredPending.map(ticket => (
+                                            <tr key={ticket.issueId} onClick={() => onTicketClick(ticket)} className="hover:bg-[var(--bg-card-hover)] cursor-pointer transition-colors group">
+                                                <td className="px-4 py-3 font-mono text-sm text-[var(--text-primary)] truncate">{ticket.issueId}</td>
+                                                <td className="px-4 py-3 text-sm font-medium text-[var(--text-primary)] truncate" title={ticket.code || 'No Subject'}>{ticket.code || 'No Subject'}</td>
+                                                <td className="px-4 py-3 text-sm text-[var(--text-secondary)] truncate">{new Date(ticket.issueDate).toLocaleDateString()}</td>
+                                                <td className="px-4 py-3 text-sm truncate">
+                                                    <span className="text-[0.75rem] px-2.5 py-1 rounded-md uppercase font-semibold capitalize bg-blue-100 text-blue-700">
+                                                        {ticket.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-right">
+                                                    <div className="flex justify-end gap-2 transition-opacity">
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setKbTicket(ticket); }}
+                                                            className="p-1.5 bg-indigo-50 border border-indigo-200 text-indigo-600 rounded-md text-lg cursor-pointer transition-colors hover:bg-indigo-500 hover:text-white flex items-center justify-center shadow-sm"
+                                                            title="KB Search"
+                                                        >
+                                                            📚
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); onTicketClick(ticket); }}
+                                                            className="p-1.5 bg-[var(--accent-primary)]/10 border border-[var(--accent-primary)]/30 text-[var(--accent-primary)] rounded-md text-lg cursor-pointer transition-colors hover:bg-[var(--accent-primary)] hover:text-white flex items-center justify-center shadow-sm"
+                                                            title="View Details"
+                                                        >
+                                                            👁️
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         ) : (
                             <div className="text-center p-8 text-[var(--text-muted)] italic bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-primary)] shadow-sm">
-                                {searchQuery ? 'No matching tickets found' : 'No pending tickets available'}
+                                {(pendingFilters.searchQuery || pendingFilters.startDate || pendingFilters.endDate) ? 'No matching tickets found' : 'No pending tickets available'}
                             </div>
                         )}
                     </div>
@@ -281,30 +294,78 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
                             <span>Ticket History</span>
                         </div>
 
-                        {/* History search bar */}
-                        <div className="sticky top-0 z-10 bg-[var(--bg-primary)] pb-2 -mt-2">
-                            <div className="relative">
-                                <input
-                                    type="text"
-                                    placeholder="Search history by ID, subject, or status"
-                                    value={historySearchQuery}
-                                    onChange={(e) => setHistorySearchQuery(e.target.value)}
-                                    className="w-full py-2.5 px-4 pl-10 border border-[var(--border-secondary)] rounded-lg text-[0.9rem] outline-none transition-colors focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary)]/10 bg-[var(--bg-card)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] shadow-sm"
-                                />
-                                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-[1.1rem]">
-                                    🔍
-                                </span>
-                            </div>
+                        {/* History search bar & filter button */}
+                        <div className="flex justify-start pb-4 pt-2">
+                            <button
+                                onClick={() => setIsHistoryFilterModalOpen(true)}
+                                className="flex items-center gap-2 px-4 py-2 bg-[var(--accent-primary)] text-white rounded-lg text-sm font-semibold shadow-sm hover:bg-indigo-600 transition-colors whitespace-nowrap"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                                </svg>
+                                Filter History
+                            </button>
                         </div>
 
                         <div className="flex flex-col gap-3 min-h-[300px]">
                             {isLoadingHistory ? (
                                 <div className="text-center p-8 text-[var(--text-muted)] italic bg-[var(--bg-card)] rounded-lg border border-[var(--border-secondary)] shadow-sm flex-1 flex items-center justify-center">Loading history...</div>
                             ) : paginatedHistory.length > 0 ? (
-                                paginatedHistory.map(t => renderTicketCard(t, 'history'))
+                                <div className="overflow-x-auto rounded-lg border border-[var(--border-secondary)] shadow-sm bg-[var(--bg-card)]">
+                                    <table className="w-full text-left border-collapse table-fixed">
+                                        <thead className="bg-[var(--bg-secondary)] text-[var(--text-secondary)] text-xs uppercase tracking-wider font-semibold border-b border-[var(--border-secondary)]">
+                                            <tr>
+                                                <th className="px-4 py-3 whitespace-nowrap w-1/6">Ticket ID</th>
+                                                <th className="px-4 py-3 whitespace-nowrap w-1/6">Subject</th>
+                                                <th className="px-4 py-3 whitespace-nowrap w-1/6">Issue Date</th>
+                                                <th className="px-4 py-3 whitespace-nowrap w-1/6">Resolved Date</th>
+                                                <th className="px-4 py-3 whitespace-nowrap w-1/6">Status</th>
+                                                <th className="px-4 py-3 text-right whitespace-nowrap w-1/6">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-[var(--border-secondary)]">
+                                            {paginatedHistory.map(ticket => {
+                                                const statusColorClass = ticket.status === 'resolved' ? 'bg-green-100 text-green-700' : (ticket.status === 'pending' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700');
+                                                return (
+                                                    <tr key={ticket.issueId} onClick={() => onTicketClick(ticket)} className="hover:bg-[var(--bg-card-hover)] cursor-pointer transition-colors group">
+                                                        <td className="px-4 py-3 font-mono text-sm text-[var(--text-primary)] truncate">{ticket.issueId}</td>
+                                                        <td className="px-4 py-3 text-sm font-medium text-[var(--text-primary)] truncate" title={ticket.code || 'No Subject'}>{ticket.code || 'No Subject'}</td>
+                                                        <td className="px-4 py-3 text-sm text-[var(--text-secondary)] truncate">{new Date(ticket.issueDate).toLocaleDateString()}</td>
+                                                        <td className="px-4 py-3 text-sm text-[var(--text-secondary)] truncate">{ticket.resolvedDate ? new Date(ticket.resolvedDate).toLocaleDateString() : '-'}</td>
+                                                        <td className="px-4 py-3 text-sm truncate">
+                                                            <span className={`text-[0.75rem] px-2.5 py-1 rounded-md uppercase font-semibold capitalize ${statusColorClass}`}>
+                                                                {ticket.status}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right">
+                                                            <div className="flex justify-end gap-2 transition-opacity">
+                                                                {ticket.status === 'resolved' && !ticket.reviewGiven && (
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); setReviewTicket(ticket); }}
+                                                                        className="p-1.5 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-md text-lg cursor-pointer transition-colors hover:bg-emerald-500 hover:text-white flex items-center justify-center shadow-sm"
+                                                                        title="Write a closing review"
+                                                                    >
+                                                                        ✍️
+                                                                    </button>
+                                                                )}
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); onTicketClick(ticket); }}
+                                                                    className="p-1.5 bg-[var(--accent-primary)]/10 border border-[var(--accent-primary)]/30 text-[var(--accent-primary)] rounded-md text-lg cursor-pointer transition-colors hover:bg-[var(--accent-primary)] hover:text-white flex items-center justify-center shadow-sm"
+                                                                    title="View Details"
+                                                                >
+                                                                    👁️
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
                             ) : (
                                 <div className="text-center p-8 text-[var(--text-muted)] italic bg-[var(--bg-card)] rounded-lg border border-[var(--border-secondary)] shadow-sm flex-1 flex items-center justify-center">
-                                    {debouncedHistorySearch ? 'No history matched your search' : 'No history available'}
+                                    {Object.values(historyFilters).some(v => v && v !== 'All') ? 'No history matched your search' : 'No history available'}
                                 </div>
                             )}
                         </div>
@@ -353,6 +414,25 @@ export default function AgentTabs({ agent, tickets, onTicketClick, historyRefres
                         t.issueId === reviewTicket.issueId ? { ...t, reviewGiven: true } : t
                     ));
                 }}
+            />
+
+            {/* Pending Tickets Filter Modal */}
+            <PendingTicketsFilterModal
+                isOpen={isFilterModalOpen}
+                onClose={() => setIsFilterModalOpen(false)}
+                onApply={(filters) => setPendingFilters(filters)}
+                initialFilters={pendingFilters}
+            />
+
+            {/* History Tickets Filter Modal */}
+            <HistoryFilterModal
+                isOpen={isHistoryFilterModalOpen}
+                onClose={() => setIsHistoryFilterModalOpen(false)}
+                onApply={(filters) => {
+                    setHistoryFilters(filters);
+                    setHistoryPage(1);
+                }}
+                initialFilters={historyFilters}
             />
         </div>
     );

@@ -353,12 +353,41 @@ async function getPaginatedHistory(req, res) {
         const skip = (page - 1) * limit;
 
         let query = { agentId };
+        
+        // General search term
         if (search) {
             query.$or = [
                 { issueId: { $regex: search, $options: 'i' } },
                 { code: { $regex: search, $options: 'i' } },
                 { status: { $regex: search, $options: 'i' } }
             ];
+        }
+
+        // Specific fields from filter modal
+        const { issueId, code, status, issueDate, resolvedDate } = req.query;
+
+        if (issueId && issueId.trim()) {
+            query.issueId = { $regex: issueId.trim(), $options: 'i' };
+        }
+        if (code && code.trim()) {
+            query.code = { $regex: code.trim(), $options: 'i' };
+        }
+        if (status && status !== 'All') {
+            query.status = status.toLowerCase();
+        }
+        if (issueDate) {
+            const start = new Date(issueDate);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(issueDate);
+            end.setHours(23, 59, 59, 999);
+            query.issueDate = { $gte: start, $lte: end };
+        }
+        if (resolvedDate) {
+            const start = new Date(resolvedDate);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(resolvedDate);
+            end.setHours(23, 59, 59, 999);
+            query.resolvedDate = { $gte: start, $lte: end };
         }
 
         // Fetch tickets, sorted by issueDate (newest first)
