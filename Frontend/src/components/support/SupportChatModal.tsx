@@ -84,7 +84,7 @@ const getConfidenceColor = (score: number) => {
 
 const SupportChatModal: React.FC<SupportChatModalProps> = ({ isOpen, onClose }) => {
     const [messages, setMessages] = useState<ChatMessage[]>([
-        { sender: 'ai', text: 'Hello! I am OmniSync Support AI. How can I assist you today?' }
+        { sender: 'ai', text: 'Hello! I am CogniFlow Support Bot. How can I assist you today?' }
     ]);
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
@@ -100,7 +100,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({ isOpen, onClose }) 
             scrollToBottom();
         } else {
             // Reset chat state when closed
-            setMessages([{ sender: 'ai', text: 'Hello! I am OmniSync Support AI. How can I assist you today?' }]);
+            setMessages([{ sender: 'ai', text: 'Hello! I am CogniFlow Support Bot. How can I assist you today?' }]);
             setTitle('');
             setDescription('');
         }
@@ -164,12 +164,12 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({ isOpen, onClose }) 
                                 ))}
                             </div>
                             <div style={{ fontSize: '12px', color: '#666', fontStyle: 'italic', marginTop: '4px' }}>
-                                If the issue is still not resolved then this is our helpline number for the support-team: 1-800-OMNISYNC
+                                If the issue is still not resolved then this is our helpline number for the support-team: 1-800-CogniFlow
                             </div>
                         </div>
                     );
                 } else {
-                    responseContent = `Sorry we cannot find a solution for your issue in our knowledge base and here is our contact number for the support-team: 1-800-OMNISYNC`;
+                    responseContent = `Sorry we cannot find a solution for your issue in our knowledge base and here is our contact number for the support-team: 1-800-CogniFlow`;
                 }
 
                 const aiResponseMsg: ChatMessage = {
@@ -223,7 +223,7 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({ isOpen, onClose }) 
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '20px' }}>🤖</span>
-                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>OmniSync Support AI</h3>
+                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>CogniFlow Support Bot</h3>
                 </div>
                 <button
                     onClick={onClose}

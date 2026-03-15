@@ -122,7 +122,7 @@ export default function AnalyticsTab() {
                         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                     </div>
                     <h3 className="text-lg font-bold text-[var(--text-primary)] mb-2">Live Insights Active</h3>
-                    <p className="text-[var(--text-muted)] max-w-[250px]">Recharts powered rendering engine is processing your OmniSync-2 API queue smoothly.</p>
+                    <p className="text-[var(--text-muted)] max-w-[250px]">Recharts powered rendering engine is processing your CogniFlow API queue smoothly.</p>
                 </div>
             </div>
 

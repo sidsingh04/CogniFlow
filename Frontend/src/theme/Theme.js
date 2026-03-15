@@ -39,7 +39,7 @@ export const themeConfig = {
 // save theme to localStorage
 function saveThemeToStorage(theme) {
     try {
-        localStorage.setItem('omnisync-theme', JSON.stringify(theme));
+        localStorage.setItem('cogniflow-theme', JSON.stringify(theme));
         console.log('Theme saved to localStorage');
     } catch (error) {
         console.error('Error saving theme to localStorage:', error);
@@ -49,7 +49,7 @@ function saveThemeToStorage(theme) {
 //load theme from localStorage
 function loadThemeFromStorage() {
     try {
-        const storedTheme = localStorage.getItem('omnisync-theme');
+        const storedTheme = localStorage.getItem('cogniflow-theme');
         if (storedTheme) {
             return JSON.parse(storedTheme);
         }

@@ -1,18 +1,15 @@
-import { useNavigate } from 'react-router-dom';
 
 interface SupervisorTopBarProps {
     supervisor: any;
 }
 
 export default function SupervisorTopBar({ supervisor }: SupervisorTopBarProps) {
-    const navigate = useNavigate();
-
     const initials = supervisor?.name?.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() || 'SV';
 
     return (
         <header className="bg-[var(--bg-secondary)] flex justify-between items-center border-b border-[var(--border-primary)] shadow-[var(--shadow-sm)] h-[70px]">
             <div className="flex items-center gap-4">
-                <h3 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-600 m-0 pl-6">OmniSync</h3>
+                <h3 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-600 m-0 pl-6">CogniFlow</h3>
                 <span className="px-3 py-1 bg-[var(--bg-primary)] text-[var(--accent-primary)] rounded-full text-xs font-semibold tracking-wide uppercase border border-[var(--border-secondary)]">
                     Supervisor
                 </span>

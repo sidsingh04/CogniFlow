@@ -1,8 +1,8 @@
-# OmniSync 2
+# CogniFlow
 
 ## Overview
 
-OmniSync 2 is a modern, real-time ticketing and support agent management system designed to streamline operations between Support Agents and Supervisors. Built with a robust full-stack architecture, it ensures seamless communication, efficient ticket resolution workflows, and comprehensive oversight capabilities.
+CogniFlow is a modern, real-time ticketing and support agent management system designed to streamline operations between Support Agents and Supervisors. Built with a robust full-stack architecture, it ensures seamless communication, efficient ticket resolution workflows, and comprehensive oversight capabilities.
 
 ## Key Features
 
@@ -14,7 +14,7 @@ OmniSync 2 is a modern, real-time ticketing and support agent management system 
 
 ## Knowledge Base (KB) Focus & Self-Learning System
 
-OmniSync 2 places a heavy emphasis on a dynamic, self-learning Knowledge Base (KB) to optimize support efficiency:
+CogniFlow places a heavy emphasis on a dynamic, self-learning Knowledge Base (KB) to optimize support efficiency:
 
 - **Customer Search Workflow**: Customers can search the knowledge base for solutions before or while raising a ticket, receiving contextually relevant articles based on optimized search logic and confidence scores.
 - **Self-Learning Capabilities**: The KB actively learns from interactions. It automatically suggests top-rated solutions/articles for high-confidence queries, or intelligently directs the user to the human helpline for low-confidence searches. This drastically reduces the load on agents by empowering customers to solve redundant problems themselves.
@@ -52,7 +52,7 @@ OmniSync 2 places a heavy emphasis on a dynamic, self-learning Knowledge Base (K
 
 1. Navigate to the project directory:
    ```bash
-   cd omnisync_2
+   cd CogniFlow
    ```
 
 2. **Backend Setup**:
@@ -60,7 +60,7 @@ OmniSync 2 places a heavy emphasis on a dynamic, self-learning Knowledge Base (K
    cd Backend
    npm install
    ```
-   *Create a `.env` file in the `Backend` directory and define the required environment variables (e.g., `PORT`, `MONGO_URI`, `JWT_SECRET`).*
+   *Create a `.env` file in the `Backend` directory and define the required environment variables (e.g., `PORT`, `MONGO_URI`, `JWT_SECRET`,`AWS_REGION`,`AWS_ACCESS_KEY_ID`,`AWS_SECRET_ACCESS_KEY`,`AWS_S3_BUCKET`,`AWS_SQS_QUEUE_URL`,`AWS_SQS_FORCE_LOGOUT_QUEUE_URL`,`GEMINI_API_KEY`).*
 
 3. **Frontend Setup**:
    ```bash

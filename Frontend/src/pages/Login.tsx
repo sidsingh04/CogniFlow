@@ -81,7 +81,7 @@ export default function Login() {
 
                 {/* Header */}
                 <div className="px-[30px] pt-[30px] pb-[20px] text-center">
-                    <h1 className="text-[1.8rem] text-[#1a1a2e] mb-2 font-bold leading-tight">OmniSync Portal</h1>
+                    <h1 className="text-[1.8rem] text-[#1a1a2e] mb-2 font-bold leading-tight">CogniFlow Portal</h1>
                     <p className="text-[#666] text-[0.95rem]">Sign in to your account</p>
                 </div>
 

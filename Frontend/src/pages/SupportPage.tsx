@@ -20,7 +20,7 @@ const SupportPage: React.FC = () => {
             >
                 <div>
                     <h1 style={{ color: 'white', margin: 0, fontSize: '24px', fontWeight: 'bold' }}>
-                        OmniSync Support
+                        CogniFlow Support
                     </h1>
                 </div>
                 <div>
@@ -102,7 +102,7 @@ const SupportPage: React.FC = () => {
                     <div style={iconStyle}>⚙️</div>
                     <h3 style={cardTitleStyle}>System Status</h3>
                     <p style={cardTextStyle}>
-                        Check the real-time status of OmniSync services and scheduled maintenance.
+                        Check the real-time status of CogniFlow services and scheduled maintenance.
                     </p>
                     <a href="#" style={linkStyle}>View Status Page &rarr;</a>
                 </div>
