@@ -236,10 +236,6 @@ exports.deleteKnowledgeBase = async (req, res) => {
     res.status(200).json({ message: "Delete KB endpoint" });
 };
 
-// It directly write, It would later go through the pipeline and
-// then the decision be made how to handle knowledge-base
-// and tags collection.
-
 exports.submitClosingReview = async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -305,14 +301,11 @@ exports.submitClosingReview = async (req, res) => {
             {
                 $limit: 1 // We only need the top absolute match to make a decision
             }
-        ]); // Removed .session(session) because $search cannot run in a transaction
+        ]); 
 
         if (topSolutions && topSolutions.length > 0) {
             const topDoc = topSolutions[0];
 
-            // Normalize Top Document's score by dividing by a heuristic max threshold (e.g. max theoretical expected ~ 25.0) 
-            // NOTE: The user explicitly requested >0.85 and [0.55, 0.85] logic natively. Maxing to 25 to approximate 0-1 bounds for search score.
-            // Adjust the denominator according to typical Atlas Search score magnitude bounds in your dataset.
             const MAX_EXPECTED_SCORE = 20.0;
             const normalizedScore = Math.min(topDoc.score / MAX_EXPECTED_SCORE, 1.0);
 
@@ -337,8 +330,6 @@ exports.submitClosingReview = async (req, res) => {
             } else if (normalizedScore >= 0.55 || (normalizedScore > 0.4 && overlap >= 0.25)) {
                 // Moderate confidence match. Either the semantic text was similar enough (>0.55) 
                 // OR the text wasn't overwhelmingly strong (>0.4) but it shared a solid tag base (>=0.25).
-                // Note: There's no upper limit restricting it here. If it was score > 0.85 but 
-                // low overlap, it falls here safely instead of duplicating.
                 kbActionTaken = "APPEND";
 
                 targetKB = await KnowledgeBase.findByIdAndUpdate(
@@ -357,7 +348,7 @@ exports.submitClosingReview = async (req, res) => {
             const newKB = new KnowledgeBase({
                 title,
                 description,
-                solution: [solution], // Wrap in array
+                solution: [solution],
                 tags: resolvedTags
             });
             await newKB.save({ session });

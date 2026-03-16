@@ -1,7 +1,5 @@
-// For generating vector-embeddings using Gemini
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// Ensure you have GEMINI_API_KEY in your .env file
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 /**

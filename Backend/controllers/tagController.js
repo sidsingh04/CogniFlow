@@ -21,7 +21,6 @@ exports.processAndInsertTags = async (tagsArray, session) => {
 
     // Pre-fetch all tags once for similarity checks (to avoid querying per tag)
     // In a massive system, this might need an optimized vector search DB, 
-    // but for this KB system it should be fine.
     const allTags = await Tag.find({}).session(session);
 
     for (const rawTag of tagsArray) {
@@ -42,7 +41,7 @@ exports.processAndInsertTags = async (tagsArray, session) => {
             let maxSimilarity = -1;
             for (const existingTag of allTags) {
                 // Check against canonical
-                let sim = isSimilar(cleanTag, existingTag.canonicalTag, 0.85) ? 1.0 : 0; // isSimilar returns boolean based on threshold, but internally calculates score. We'll use 0.85 threshold exactly.
+                let sim = isSimilar(cleanTag, existingTag.canonicalTag, 0.85) ? 1.0 : 0; 
                 
                 // Let's manually calculate score to find the maximum if isSimilar just returns bool.
                 // Looking at tagging.js, it returns a boolean. So we just take the first one that matches.

@@ -14,7 +14,7 @@ function startTagCleanupCron() {
             twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 
             // Find and delete pending tags that are at least 2 days old
-            // We ensure usageCount is <= 5 because > 5 triggers approval based on comments in Tag.js
+            // We ensure usageCount is <= 5 to delete noisy tags
             const deleteResult = await Tag.deleteMany({
                 status: "pending",
                 usageCount: { $lte: 5 },

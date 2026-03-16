@@ -46,5 +46,7 @@ const tagSchema = new mongoose.Schema({
 
 // fast alias lookup
 tagSchema.index({ aliases: 1 });
+//fast pending tag cleanup
+tagSchema.index({ status: 1, usageCount: 1, createdAt: 1 });
 
 module.exports = mongoose.model("Tag", tagSchema);
