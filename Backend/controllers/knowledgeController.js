@@ -1,6 +1,7 @@
 const KnowledgeBase = require("../models/KnowledgeBase");
 const Ticket = require("../models/Tickets");
 const Tag = require("../models/Tags");
+const IdempotencyKey = require("../models/IdempotencyKey");
 const mongoose = require("mongoose");
 const { NlpManager } = require("node-nlp");
 const { isSimilar, jaccardSimilarity, } = require("../services/tagging");
@@ -369,11 +370,20 @@ exports.submitClosingReview = async (req, res) => {
         await session.commitTransaction();
         session.endSession();
 
-        res.status(201).json({
+        const response = {
             message: `Review submitted. KB Action: ${kbActionTaken}`,
             kb: targetKB,
             ticket: updatedTicket
-        });
+        };
+
+        if (req.idempotencyKey) {
+            await IdempotencyKey.create({
+                key: req.idempotencyKey,
+                response
+            });
+        }
+
+        res.status(201).json(response);
     } catch (error) {
         await session.abortTransaction();
         session.endSession();

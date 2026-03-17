@@ -53,7 +53,16 @@ async function createTicket(req, res) {
             console.error("Socket emit error:", socketErr);
         }
 
-        return res.json({ success: true, message: "Ticket created successfully" });
+        const response = { success: true, message: "Ticket created successfully" };
+
+        if (req.idempotencyKey) {
+            await IdempotencyKey.create({
+                key: req.idempotencyKey,
+                response
+            });
+        }
+
+        return res.json(response);
     } catch (error) {
         console.error("Error creating ticket:", error);
         return res.status(500).json({ success: false, message: "Internal server error" });

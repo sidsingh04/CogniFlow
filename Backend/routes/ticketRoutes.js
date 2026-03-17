@@ -3,7 +3,7 @@ const router = express.Router();
 const ticketController = require("../controllers/ticketController");
 const idempotencyMiddleware = require("../middleware/idempotencyMiddleware");
 
-router.post("/create", ticketController.createTicket);
+router.post("/create", idempotencyMiddleware, ticketController.createTicket);
 router.get("/get", ticketController.getTicketById);
 router.put("/update", idempotencyMiddleware, ticketController.updateTicket);
 router.get("/get-by-status", ticketController.getTicketsByStatus);

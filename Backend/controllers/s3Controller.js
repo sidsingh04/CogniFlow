@@ -10,6 +10,7 @@ const { v4: uuid } = require("uuid");
 const { s3 } = require("../config/s3");
 const Attachment = require("../models/Attachment");
 const Ticket = require("../models/Tickets");
+const IdempotencyKey = require("../models/IdempotencyKey");
 
 const uploadFile = async (req, res) => {
     let fileKey = null;
@@ -37,7 +38,16 @@ const uploadFile = async (req, res) => {
             ticket: req.body.ticketId
         });
 
-        res.json({ success: true, attachment });
+        const response = { success: true, attachment };
+
+        if (req.idempotencyKey) {
+            await IdempotencyKey.create({
+                key: req.idempotencyKey,
+                response
+            });
+        }
+
+        res.json(response);
 
     } catch (err) {
         //Compensation Strategy (can shift later to SQS Queue (I think))

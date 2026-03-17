@@ -10,11 +10,14 @@ const {
   getFileByTicketId
 } = require("../controllers/s3Controller");
 
+const idempotencyMiddleware = require("../middleware/idempotencyMiddleware");
+
 const router = express.Router();
 
 router.post(
   "/upload",
   upload.single("file"),
+  idempotencyMiddleware,
   uploadFile
 );
 
