@@ -29,14 +29,10 @@ const knowledgeBaseSchema = new mongoose.Schema({
         type: [String],
         default: []
     },
-    //Time metadata
-    createdAt: {
-        type: Date,
-        default: Date.now
-    },
-    updatedAt: {
-        type: Date,
-        default: Date.now
+    // Gemini embedding of `${title} ${description}` — used for semantic re-ranking at search time
+    embedding: {
+        type: [Number],
+        default: []
     }
 }, { timestamps: true });
 

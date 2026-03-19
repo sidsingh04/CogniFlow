@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 920" width="960" height="920" font-family="Segoe UI, system-ui, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#64748b" stroke-width="1.5" stroke-linecap="round"/>
+    </marker>
+  </defs>
+  <rect width="960" height="920" fill="#f8fafc" rx="12"/>
+  <text x="480" y="36" text-anchor="middle" font-size="18" font-weight="700" fill="#0f172a">Workflow 3 — Agent Closing Review</text>
+  <rect x="230" y="56" width="500" height="56" rx="9" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="480" y="78" text-anchor="middle" font-size="13" font-weight="600" fill="#3b0764">Agent submits Closing Review form</text>
+  <text x="480" y="97" text-anchor="middle" font-size="11" fill="#5b21b6">issueId · title · description · solution · tags[]</text>
+  <line x1="480" y1="112" x2="480" y2="132" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="230" y="132" width="500" height="56" rx="9" fill="#fee2e2" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="480" y="154" text-anchor="middle" font-size="13" font-weight="600" fill="#7f1d1d">Idempotency check (middleware)</text>
+  <text x="480" y="173" text-anchor="middle" font-size="11" fill="#991b1b">x-idempotency-key seen before — return cached response immediately</text>
+  <line x1="480" y1="188" x2="480" y2="208" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="150" y="208" width="660" height="24" rx="6" fill="#e2e8f0"/>
+  <text x="480" y="224" text-anchor="middle" font-size="11" font-weight="600" fill="#475569">PRE-TRANSACTION PHASE — reads only  ·  Atlas Search cannot run inside a MongoDB transaction</text>
+  <line x1="480" y1="232" x2="480" y2="252" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="230" y="252" width="500" height="56" rx="9" fill="#fae8ff" stroke="#9333ea" stroke-width="1.5"/>
+  <text x="480" y="274" text-anchor="middle" font-size="13" font-weight="600" fill="#3b0764">Gemini embedding — ONE API call</text>
+  <text x="480" y="293" text-anchor="middle" font-size="11" fill="#6b21a8">Generates embedding for title + description of this submission</text>
+  <line x1="480" y1="308" x2="480" y2="328" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="230" y="328" width="500" height="56" rx="9" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="480" y="350" text-anchor="middle" font-size="13" font-weight="600" fill="#1e3a8a">Atlas Search KB lookup — no session</text>
+  <text x="480" y="369" text-anchor="middle" font-size="11" fill="#1d4ed8">Finds closest existing KB article  ·  Score gate >= 5  ·  Limit 1</text>
+  <line x1="480" y1="384" x2="480" y2="404" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="150" y="404" width="660" height="24" rx="6" fill="#e2e8f0"/>
+  <text x="480" y="420" text-anchor="middle" font-size="11" font-weight="600" fill="#475569">TRANSACTION PHASE — all writes atomic  ·  MongoDB session opened here</text>
+  <line x1="480" y1="428" x2="480" y2="448" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="230" y="448" width="500" height="56" rx="9" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="480" y="470" text-anchor="middle" font-size="13" font-weight="600" fill="#1e3a8a">processAndInsertTags()</text>
+  <text x="480" y="489" text-anchor="middle" font-size="11" fill="#1d4ed8">Normalise — exact — fuzzy — vector — create  ·  tag writes use session</text>
+  <line x1="480" y1="504" x2="480" y2="524" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="230" y="524" width="500" height="56" rx="9" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+  <text x="480" y="546" text-anchor="middle" font-size="13" font-weight="600" fill="#78350f">KB Decision (using pre-fetched candidate)</text>
+  <text x="480" y="565" text-anchor="middle" font-size="11" fill="#92400e">rawScore + tag overlap — IGNORE / APPEND / INSERT</text>
+  <line x1="230" y1="552" x2="110" y2="552" stroke="#94a3b8" stroke-width="1.3"/>
+  <line x1="110" y1="552" x2="110" y2="646" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arr)"/>
+  <line x1="480" y1="580" x2="480" y2="636" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arr)"/>
+  <line x1="730" y1="552" x2="850" y2="552" stroke="#94a3b8" stroke-width="1.3"/>
+  <line x1="850" y1="552" x2="850" y2="646" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#arr)"/>
+  <text x="170" y="548" text-anchor="middle" font-size="11" font-weight="600" fill="#64748b">IGNORE</text>
+  <text x="480" y="618" text-anchor="middle" font-size="11" font-weight="600" fill="#64748b">APPEND</text>
+  <text x="790" y="548" text-anchor="middle" font-size="11" font-weight="600" fill="#64748b">INSERT</text>
+  <text x="168" y="562" text-anchor="middle" font-size="10" fill="#94a3b8">score >= 17</text>
+  <text x="168" y="574" text-anchor="middle" font-size="10" fill="#94a3b8">overlap >= 0.4</text>
+  <text x="790" y="562" text-anchor="middle" font-size="10" fill="#94a3b8">no match</text>
+  <text x="790" y="574" text-anchor="middle" font-size="10" fill="#94a3b8">found</text>
+  <rect x="30" y="646" width="162" height="72" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.3"/>
+  <text x="111" y="670" text-anchor="middle" font-size="12" font-weight="600" fill="#334155">IGNORE</text>
+  <text x="111" y="688" text-anchor="middle" font-size="10" fill="#475569">Sync tags only.</text>
+  <text x="111" y="702" text-anchor="middle" font-size="10" fill="#475569">Already in KB.</text>
+  <rect x="350" y="636" width="262" height="82" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="1.3"/>
+  <text x="481" y="660" text-anchor="middle" font-size="12" font-weight="600" fill="#14532d">APPEND</text>
+  <text x="481" y="678" text-anchor="middle" font-size="10" fill="#166534">Duplicate solution check first.</text>
+  <text x="481" y="693" text-anchor="middle" font-size="10" fill="#166534">$push solution · cap at 10.</text>
+  <text x="481" y="708" text-anchor="middle" font-size="10" fill="#166534">Update tags + embedding.</text>
+  <rect x="770" y="646" width="162" height="72" rx="8" fill="#dbeafe" stroke="#2563eb" stroke-width="1.3"/>
+  <text x="851" y="670" text-anchor="middle" font-size="12" font-weight="600" fill="#1e3a8a">INSERT</text>
+  <text x="851" y="688" text-anchor="middle" font-size="10" fill="#1e40af">New KB article.</text>
+  <text x="851" y="702" text-anchor="middle" font-size="10" fill="#1e40af">Store embedding.</text>
+  <line x1="111" y1="718" x2="111" y2="770" stroke="#94a3b8" stroke-width="1.3"/>
+  <line x1="111" y1="770" x2="480" y2="770" stroke="#94a3b8" stroke-width="1.3"/>
+  <line x1="481" y1="718" x2="481" y2="770" stroke="#94a3b8" stroke-width="1.3"/>
+  <line x1="851" y1="718" x2="851" y2="770" stroke="#94a3b8" stroke-width="1.3"/>
+  <line x1="851" y1="770" x2="480" y2="770" stroke="#94a3b8" stroke-width="1.3"/>
+  <line x1="480" y1="770" x2="480" y2="790" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="230" y="790" width="500" height="52" rx="9" fill="#fee2e2" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="480" y="812" text-anchor="middle" font-size="13" font-weight="600" fill="#7f1d1d">Ticket.reviewGiven = true (session write)</text>
+  <text x="480" y="830" text-anchor="middle" font-size="11" fill="#991b1b">Prevents duplicate review submissions for same ticket</text>
+  <line x1="480" y1="842" x2="480" y2="862" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="230" y="862" width="500" height="40" rx="9" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="480" y="887" text-anchor="middle" font-size="12" font-weight="600" fill="#14532d">Transaction commits · Idempotency key stored (TTL 3600s)</text>
+</svg>

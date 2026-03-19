@@ -4,11 +4,13 @@ const Tag = require("../models/Tags");
 const IdempotencyKey = require("../models/IdempotencyKey");
 const mongoose = require("mongoose");
 const { NlpManager } = require("node-nlp");
-const { isSimilar, jaccardSimilarity, } = require("../services/tagging");
+const { jaccardSimilarity } = require("../services/tagging");
+const { generateEmbedding, cosineSimilarity } = require("../services/embedding");
 const { calculateConfidence } = require("../services/confidence");
 const { processAndInsertTags } = require("./tagController");
+const keywordExtractor = require("keyword-extractor");
 
-// Initialize NLP manager for English
+// Initialize NLP manager for English — used only for email/url entity extraction
 const manager = new NlpManager({ languages: ['en'], forceNER: true });
 
 /* 
@@ -23,7 +25,7 @@ exports.createKnowledgeBase = async (req, res) => {
         const newKB = new KnowledgeBase({
             title,
             description,
-            solution: solution ? [solution] : ["Pending AI/Agent Response"], // Array initialization
+            solution: solution ? [solution] : ["Pending AI/Agent Response"],
             tags: tags || []
         });
 
@@ -40,7 +42,7 @@ exports.createKnowledgeBase = async (req, res) => {
 };
 */
 
-//Customer Query Search
+// ─── Customer Query Search ────────────────────────────────────────────────────
 exports.searchKnowledgeBase = async (req, res) => {
     try {
         const { title, description } = req.body;
@@ -49,11 +51,10 @@ exports.searchKnowledgeBase = async (req, res) => {
             return res.status(400).json({ message: "Title and description are required" });
         }
 
-        // Use node-nlp to process the description
+        // 1. Extract email/url entities via node-nlp
         const result = await manager.process("en", description);
         let tags = [];
 
-        // 1. Keep meaningful built-in NLP entities like emails and URLs
         if (result && result.entities && result.entities.length > 0) {
             result.entities.forEach(e => {
                 if (['email', 'url'].includes(e.entity)) {
@@ -62,43 +63,44 @@ exports.searchKnowledgeBase = async (req, res) => {
             });
         }
 
-        // 2. Tokenize text to find other potential tags
-        const words = description.split(/\s+/)
-            .map(w => w.replace(/^[.,;:!?()]+|[.,;:!?()]+$/g, '').toLowerCase())
-            .filter(Boolean);
+        // 2. Extract meaningful keywords from description (stop words removed)
+        const keywords = keywordExtractor.extract(description, {
+            language: "english",
+            remove_digits: false,
+            return_changed_case: true,
+            remove_duplicates: true
+        });
 
-        if (words.length > 0) {
-            // Fetch matching tags from database (canonical or aliases)
+        if (keywords.length > 0) {
             const matchedTagsDocs = await Tag.find({
+                status: "approved",
                 $or: [
-                    { canonicalTag: { $in: words } },
-                    { aliases: { $in: words } }
+                    { canonicalTag: { $in: keywords } },
+                    { aliases: { $in: keywords } }
                 ]
             });
 
             const resolvedTags = new Set();
 
-            // Add DB-matched canonical tags
-            words.forEach(word => {
+            keywords.forEach(word => {
                 const matchedDoc = matchedTagsDocs.find(doc =>
                     doc.canonicalTag === word || doc.aliases.includes(word)
                 );
-
                 if (matchedDoc) {
                     resolvedTags.add(matchedDoc.canonicalTag);
                 }
             });
 
-            // Add DB tags to the array alongside NLP entities
             tags = [...tags, ...Array.from(resolvedTags)];
         }
 
         tags = [...new Set(tags)].filter(Boolean);
 
-        // Build search query based on user inputs and extracted tags
-        const searchQuery = `${title} ${description} ${tags.join(' ')}`.trim();
+        // 3. Build clean search query
+        const cleanKeywords = keywords.join(' ');
+        const searchQuery = `${title} ${cleanKeywords} ${tags.join(' ')}`.trim();
 
-        // Perform Atlas Search using Field Boosting
+        // 4. Atlas Search — no session, never inside a transaction
         const topSolutions = await KnowledgeBase.aggregate([
             {
                 $search: {
@@ -109,21 +111,21 @@ exports.searchKnowledgeBase = async (req, res) => {
                                 text: {
                                     query: searchQuery,
                                     path: "title",
-                                    score: { boost: { value: 3 } } // Secondary Priority
+                                    score: { boost: { value: 3 } }
                                 }
                             },
                             {
                                 text: {
                                     query: searchQuery,
                                     path: "tags",
-                                    score: { boost: { value: 4 } } // Highest Priority
+                                    score: { boost: { value: 4 } }
                                 }
                             },
                             {
                                 text: {
                                     query: searchQuery,
                                     path: "description",
-                                    score: { boost: { value: 1 } } // Base Priority
+                                    score: { boost: { value: 1 } }
                                 }
                             }
                         ]
@@ -136,11 +138,9 @@ exports.searchKnowledgeBase = async (req, res) => {
                 }
             },
             {
-                // Project search score into a real field so we can filter on it
                 $addFields: { score: { $meta: "searchScore" } }
             },
             {
-                // Gate 1: Only keep documents with relevance score >= 6
                 $match: { score: { $gte: 6 } }
             },
             {
@@ -155,31 +155,39 @@ exports.searchKnowledgeBase = async (req, res) => {
                     usageCount: 1,
                     successCount: 1,
                     updatedAt: 1,
-                    score: 1
+                    score: 1,
+                    embedding: 1
                 }
             }
         ]);
 
+        // 5. Jaccard filter
         const filteredSolutions = tags.length > 0
             ? topSolutions.filter(doc => jaccardSimilarity(tags, doc.tags || []) >= 0.3)
-            : topSolutions; // If no user tags were extracted, skip Jaccard filter
+            : topSolutions.filter(doc => doc.score >= 10);
 
         let finalSolutions = [];
 
         if (filteredSolutions && filteredSolutions.length > 0) {
-            const maxRelevanceScore = filteredSolutions[0].score || 1; // Prevent division by zero
+            const maxRelevanceScore = filteredSolutions[0].score || 1;
 
-            // Calculate confidence score for each document
+            // 6. One Gemini call for semantic re-ranking
+            const queryEmbedding = await generateEmbedding(`${title} ${description}`);
+
             const scoredSolutions = filteredSolutions.map(doc => {
                 const normalizedRelevance = doc.score / maxRelevanceScore;
-                const confidenceScore = calculateConfidence(normalizedRelevance, doc);
-                return {
-                    ...doc,
-                    confidenceScore
-                };
+
+                let semanticBoost = 0;
+                if (queryEmbedding.length > 0 && doc.embedding?.length > 0) {
+                    semanticBoost = cosineSimilarity(queryEmbedding, doc.embedding);
+                }
+
+                const blendedRelevance = normalizedRelevance * 0.8 + semanticBoost * 0.2;
+                const confidenceScore = calculateConfidence(blendedRelevance, doc);
+
+                return { ...doc, confidenceScore };
             });
 
-            // Sort by confidence score descending
             scoredSolutions.sort((a, b) => b.confidenceScore - a.confidenceScore);
 
             const topScore = scoredSolutions[0].confidenceScore;
@@ -228,19 +236,15 @@ exports.getKnowledgeBaseById = async (req, res) => {
 };
 
 exports.updateKnowledgeBase = async (req, res) => {
-    // Placeholder functionality, not fully implemented for this workflow
     res.status(200).json({ message: "Update KB endpoint" });
 };
 
 exports.deleteKnowledgeBase = async (req, res) => {
-    // Placeholder functionality, not fully implemented for this workflow
     res.status(200).json({ message: "Delete KB endpoint" });
 };
 
+// ─── Agent Closing Review ─────────────────────────────────────────────────────
 exports.submitClosingReview = async (req, res) => {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
         const { issueId, title, description, solution, tags } = req.body;
 
@@ -250,17 +254,17 @@ exports.submitClosingReview = async (req, res) => {
 
         const providedTags = Array.isArray(tags) ? tags : [];
 
-        // 1. Process tags through insertion pipeline
-        const resolvedTags = await processAndInsertTags(providedTags, session);
+        // ── PRE-TRANSACTION PHASE ─────────────────────────────────────────────
+        // All reads that use Atlas Search MUST happen before the transaction opens.
+        // $search and $vectorSearch cannot run inside a MongoDB transaction.
 
-        // 2. Smart KB Integration Check via Atlas Search
-        let kbActionTaken = "INSERT";
-        let targetKB = null;
+        // 1. Generate KB embedding (Gemini API call — outside transaction)
+        const kbEmbedding = await generateEmbedding(`${title} ${description}`);
 
-        // Build search query using the original attributes and resolved tags
-        const searchQuery = `${title} ${description} ${resolvedTags.join(' ')}`.trim();
+        // 2. Atlas Search KB duplicate check — outside transaction, read-only
+        //    We find the best candidate now and pass it into the transaction as data.
+        const searchQuery = `${title} ${description} ${providedTags.join(' ')}`.trim();
 
-        // Perform Atlas Search using Field Boosting (Same as searchKnowledgeBase)
         const topSolutions = await KnowledgeBase.aggregate([
             {
                 $search: {
@@ -296,107 +300,149 @@ exports.submitClosingReview = async (req, res) => {
                 $addFields: { score: { $meta: "searchScore" } }
             },
             {
-                // Gate 1: Relevance must be >= 5
                 $match: { score: { $gte: 5 } }
             },
             {
-                $limit: 1 // We only need the top absolute match to make a decision
+                $limit: 1
             }
-        ]); 
+        ]);
 
-        if (topSolutions && topSolutions.length > 0) {
-            const topDoc = topSolutions[0];
+        // topCandidate is now available as plain data — no session needed
+        const topCandidate = topSolutions?.[0] || null;
 
-            const MAX_EXPECTED_SCORE = 20.0;
-            const normalizedScore = Math.min(topDoc.score / MAX_EXPECTED_SCORE, 1.0);
+        // ── TRANSACTION PHASE ─────────────────────────────────────────────────
+        // Only standard Mongoose reads/writes go inside the transaction.
+        // No $search or $vectorSearch here.
 
-            const overlap = jaccardSimilarity(resolvedTags, topDoc.tags || []);
+        const session = await mongoose.startSession();
+        session.startTransaction();
 
-            const combinedTags = [...new Set([...(topDoc.tags || []), ...resolvedTags])];
-            const tagsChanged = combinedTags.length !== (topDoc.tags || []).length;
+        try {
+            // 3. Process tags — Atlas Search aggregates inside processAndInsertTags
+            //    now run without .session() so they won't throw.
+            //    Tag writes (save) still use the session correctly.
+            const resolvedTags = await processAndInsertTags(providedTags, session);
 
-            if (normalizedScore > 0.85 && overlap >= 0.4) {
-                // Highly confident match overall. Ignore the text, but sync the tags.
-                kbActionTaken = "IGNORE";
+            // 4. KB decision using the pre-fetched candidate
+            let kbActionTaken = "INSERT";
+            let targetKB = null;
 
-                if (tagsChanged) {
-                    targetKB = await KnowledgeBase.findByIdAndUpdate(
-                        topDoc._id,
-                        { $set: { tags: combinedTags } },
-                        { new: true, session }
-                    );
-                } else {
-                    targetKB = topDoc;
+            if (topCandidate) {
+                const rawScore = topCandidate.score;
+                const overlap = jaccardSimilarity(resolvedTags, topCandidate.tags || []);
+                const combinedTags = [...new Set([...(topCandidate.tags || []), ...resolvedTags])];
+                const tagsChanged = combinedTags.length !== (topCandidate.tags || []).length;
+
+                if (rawScore >= 17 && overlap >= 0.4) {
+                    // High confidence — IGNORE, only sync tags
+                    kbActionTaken = "IGNORE";
+
+                    if (tagsChanged) {
+                        targetKB = await KnowledgeBase.findByIdAndUpdate(
+                            topCandidate._id,
+                            { $set: { tags: combinedTags } },
+                            { new: true, session }
+                        );
+                    } else {
+                        targetKB = topCandidate;
+                    }
+
+                } else if (rawScore >= 10 || (rawScore > 7 && overlap >= 0.25)) {
+                    // Moderate confidence — APPEND if not duplicate
+                    kbActionTaken = "APPEND";
+
+                    const isDuplicate = Array.isArray(topCandidate.solution) &&
+                        topCandidate.solution.includes(solution);
+
+                    if (!isDuplicate) {
+                        targetKB = await KnowledgeBase.findByIdAndUpdate(
+                            topCandidate._id,
+                            {
+                                $push: {
+                                    solution: {
+                                        $each: [solution],
+                                        $slice: -10
+                                    }
+                                },
+                                $set: {
+                                    tags: combinedTags,
+                                    embedding: kbEmbedding.length > 0
+                                        ? kbEmbedding
+                                        : topCandidate.embedding || []
+                                }
+                            },
+                            { new: true, session }
+                        );
+                    } else {
+                        // Duplicate solution — sync tags only
+                        targetKB = await KnowledgeBase.findByIdAndUpdate(
+                            topCandidate._id,
+                            { $set: { tags: combinedTags } },
+                            { new: true, session }
+                        );
+                    }
                 }
-            } else if (normalizedScore >= 0.55 || (normalizedScore > 0.4 && overlap >= 0.25)) {
-                // Moderate confidence match. Either the semantic text was similar enough (>0.55) 
-                // OR the text wasn't overwhelmingly strong (>0.4) but it shared a solid tag base (>=0.25).
-                kbActionTaken = "APPEND";
-
-                targetKB = await KnowledgeBase.findByIdAndUpdate(
-                    topDoc._id,
-                    {
-                        $push: { solution: solution }, // Push the new solution string to the array
-                        $set: { tags: combinedTags }
-                    },
-                    { new: true, session }
-                );
             }
+
+            // 5. INSERT fallback — create new KB entry
+            if (kbActionTaken === "INSERT") {
+                const newKB = new KnowledgeBase({
+                    title,
+                    description,
+                    solution: [solution],
+                    tags: resolvedTags,
+                    embedding: kbEmbedding
+                });
+                await newKB.save({ session });
+                targetKB = newKB;
+            }
+
+            // 6. Mark ticket as reviewed
+            const updatedTicket = await Ticket.findOneAndUpdate(
+                { issueId },
+                { $set: { reviewGiven: true } },
+                { new: true, session }
+            );
+
+            if (!updatedTicket) {
+                throw new Error(`Ticket with issueId ${issueId} not found`);
+            }
+
+            await session.commitTransaction();
+            session.endSession();
+
+            const response = {
+                message: `Review submitted. KB Action: ${kbActionTaken}`,
+                kb: targetKB,
+                ticket: updatedTicket
+            };
+
+            if (req.idempotencyKey) {
+                await IdempotencyKey.create({
+                    key: req.idempotencyKey,
+                    response
+                });
+            }
+
+            res.status(201).json(response);
+
+        } catch (error) {
+            await session.abortTransaction();
+            session.endSession();
+            throw error; // re-throw to outer catch
         }
 
-        // 3. Fallback: Create new entry if no suitable match found
-        if (kbActionTaken === "INSERT") {
-            const newKB = new KnowledgeBase({
-                title,
-                description,
-                solution: [solution],
-                tags: resolvedTags
-            });
-            await newKB.save({ session });
-            targetKB = newKB;
-        }
-
-        // 4. Update the ticket's reviewGiven flag
-        const updatedTicket = await Ticket.findOneAndUpdate(
-            { issueId },
-            { $set: { reviewGiven: true } },
-            { new: true, session }
-        );
-
-        if (!updatedTicket) {
-            throw new Error(`Ticket with issueId ${issueId} not found`);
-        }
-
-        await session.commitTransaction();
-        session.endSession();
-
-        const response = {
-            message: `Review submitted. KB Action: ${kbActionTaken}`,
-            kb: targetKB,
-            ticket: updatedTicket
-        };
-
-        if (req.idempotencyKey) {
-            await IdempotencyKey.create({
-                key: req.idempotencyKey,
-                response
-            });
-        }
-
-        res.status(201).json(response);
     } catch (error) {
-        await session.abortTransaction();
-        session.endSession();
         console.error("Error submitting closing review:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };
 
-// Handle Upvote / Downvote Feedback on Search Solutions
+// ─── Upvote / Downvote Feedback ───────────────────────────────────────────────
 exports.feedbackKnowledgeBase = async (req, res) => {
     try {
         const { id } = req.params;
-        const { action } = req.body; // 'upvote' or 'downvote'
+        const { action } = req.body;
 
         if (!['upvote', 'downvote'].includes(action)) {
             return res.status(400).json({ message: "Invalid action. Use 'upvote' or 'downvote'." });
@@ -405,10 +451,8 @@ exports.feedbackKnowledgeBase = async (req, res) => {
         let updateQuery = {};
 
         if (action === 'upvote') {
-            // Atomically increment successCount and usageCount
             updateQuery = { $inc: { successCount: 1, usageCount: 1 } };
         } else if (action === 'downvote') {
-            // Atomically increment usageCount only
             updateQuery = { $inc: { usageCount: 1 } };
         }
 
@@ -416,8 +460,8 @@ exports.feedbackKnowledgeBase = async (req, res) => {
             id,
             updateQuery,
             {
-                new: true,  // Return the updated document
-                timestamps: false  //prevent the updatedAt field from being changed
+                new: true,
+                timestamps: false
             }
         );
 

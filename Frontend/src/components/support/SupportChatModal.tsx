@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import axiosInstance from '../../utils/axiosInstance';
 
 interface SupportChatModalProps {
     isOpen: boolean;
@@ -20,20 +21,11 @@ const FeedbackButtons: React.FC<{ documentId: string }> = ({ documentId }) => {
         if (voted) return;
         setVoted(true);
         try {
-            const resp = await fetch(`http://localhost:3000/api/knowledge/feedback-kb/${documentId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action })
-            });
-            if (resp.ok) {
-                setStatusText('Thanks for the feedback!');
-            } else {
-                setStatusText('Feedback failed.');
-                setVoted(false);
-            }
+            await axiosInstance.put(`/api/knowledge/feedback-kb/${documentId}`, { action });
+            setStatusText('Thanks for the feedback!');
         } catch (e) {
             console.error(e);
-            setStatusText('Network error.');
+            setStatusText('Feedback failed.');
             setVoted(false);
         }
     };
@@ -77,9 +69,9 @@ const FeedbackButtons: React.FC<{ documentId: string }> = ({ documentId }) => {
 };
 
 const getConfidenceColor = (score: number) => {
-    if (score > 0.75) return '#006400'; // Dark green
-    if (score >= 0.60) return '#4caf50'; // Light green
-    return '#9acd32'; // Yellow green
+    if (score > 0.75) return '#006400';
+    if (score >= 0.60) return '#4caf50';
+    return '#9acd32';
 };
 
 const SupportChatModal: React.FC<SupportChatModalProps> = ({ isOpen, onClose }) => {
@@ -99,7 +91,6 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({ isOpen, onClose }) 
         if (isOpen) {
             scrollToBottom();
         } else {
-            // Reset chat state when closed
             setMessages([{ sender: 'ai', text: 'Hello! I am CogniFlow Support Bot. How can I assist you today?' }]);
             setTitle('');
             setDescription('');
@@ -117,69 +108,56 @@ const SupportChatModal: React.FC<SupportChatModalProps> = ({ isOpen, onClose }) 
         setIsLoading(true);
 
         try {
-            const response = await fetch('http://localhost:3000/api/knowledge/search-kb', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, description })
-            });
-            const data = await response.json();
+            const { data } = await axiosInstance.post('/api/knowledge/search-kb', { title, description });
 
-            if (response.ok) {
-                let responseContent: React.ReactNode;
+            let responseContent: React.ReactNode;
 
-                if (data.solutions && data.solutions.length > 0) {
-                    const topScore = data.solutions[0].confidenceScore;
-                    const introText = topScore > 0.75
-                        ? "Thanks for reaching out! We found some solutions that might help you:"
-                        : "These are the articles that might help you:";
+            if (data.solutions && data.solutions.length > 0) {
+                const topScore = data.solutions[0].confidenceScore;
+                const introText = topScore > 0.75
+                    ? "Thanks for reaching out! We found some solutions that might help you:"
+                    : "These are the articles that might help you:";
 
-                    responseContent = (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            <div>{introText}</div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {data.solutions.map((sol: any, i: number) => (
-                                    <div key={i} style={{
-                                        backgroundColor: 'white',
-                                        padding: '12px',
-                                        borderRadius: '8px',
-                                        border: '1px solid #ccc',
-                                        fontSize: '13px'
-                                    }}>
-                                        <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#0055a4' }}>
-                                            {sol.title} <span style={{ fontSize: '11px', color: getConfidenceColor(sol.confidenceScore), fontWeight: 'bold' }}>({Math.round(sol.confidenceScore * 100)}% match)</span>
-                                        </div>
-                                        <div style={{ color: '#333', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-                                            {Array.isArray(sol.solution) ? sol.solution.map((text: string, idx: number) => (
-                                                <div key={idx} style={{ padding: '8px', backgroundColor: '#f9f9f9', borderRadius: '4px', borderLeft: '3px solid #0055a4' }}>
-                                                    {text}
-                                                </div>
-                                            )) : (
-                                                <div style={{ padding: '8px', backgroundColor: '#f9f9f9', borderRadius: '4px', borderLeft: '3px solid #0055a4' }}>
-                                                    {sol.solution}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <FeedbackButtons documentId={sol._id} />
+                responseContent = (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div>{introText}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {data.solutions.map((sol: any, i: number) => (
+                                <div key={i} style={{
+                                    backgroundColor: 'white',
+                                    padding: '12px',
+                                    borderRadius: '8px',
+                                    border: '1px solid #ccc',
+                                    fontSize: '13px'
+                                }}>
+                                    <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#0055a4' }}>
+                                        {sol.title} <span style={{ fontSize: '11px', color: getConfidenceColor(sol.confidenceScore), fontWeight: 'bold' }}>({Math.round(sol.confidenceScore * 100)}% match)</span>
                                     </div>
-                                ))}
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#666', fontStyle: 'italic', marginTop: '4px' }}>
-                                If the issue is still not resolved then this is our helpline number for the support-team: 1-800-CogniFlow
-                            </div>
+                                    <div style={{ color: '#333', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                                        {Array.isArray(sol.solution) ? sol.solution.map((text: string, idx: number) => (
+                                            <div key={idx} style={{ padding: '8px', backgroundColor: '#f9f9f9', borderRadius: '4px', borderLeft: '3px solid #0055a4' }}>
+                                                {text}
+                                            </div>
+                                        )) : (
+                                            <div style={{ padding: '8px', backgroundColor: '#f9f9f9', borderRadius: '4px', borderLeft: '3px solid #0055a4' }}>
+                                                {sol.solution}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <FeedbackButtons documentId={sol._id} />
+                                </div>
+                            ))}
                         </div>
-                    );
-                } else {
-                    responseContent = `Sorry we cannot find a solution for your issue in our knowledge base and here is our contact number for the support-team: 1-800-CogniFlow`;
-                }
-
-                const aiResponseMsg: ChatMessage = {
-                    sender: 'ai',
-                    text: responseContent
-                };
-                setMessages((prev) => [...prev, aiResponseMsg]);
+                        <div style={{ fontSize: '12px', color: '#666', fontStyle: 'italic', marginTop: '4px' }}>
+                            If the issue is still not resolved then this is our helpline number for the support-team: 1-800-CogniFlow
+                        </div>
+                    </div>
+                );
             } else {
-                throw new Error(data.message || 'Failed to submit query');
+                responseContent = `Sorry we cannot find a solution for your issue in our knowledge base and here is our contact number for the support-team: 1-800-CogniFlow`;
             }
+
+            setMessages((prev) => [...prev, { sender: 'ai', text: responseContent }]);
         } catch (error) {
             console.error('Error sending message:', error);
             setMessages((prev) => [...prev, { sender: 'ai', text: 'Sorry, I encountered an error. Please try again later.' }]);
